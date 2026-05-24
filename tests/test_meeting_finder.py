@@ -669,11 +669,10 @@ class TestUIFeatures:
         assert '<svg' in html
         assert 'header-icon' in html
 
-    def test_header_svg_has_converging_paths(self, html):
-        """Four curved paths converge on a central dot."""
-        assert 'stroke-linecap="round"' in html
-        # Central meeting-point dot
-        assert 'cx="12"' in html and 'cy="12"' in html
+    def test_header_svg_is_plane_orbit(self, html):
+        """Logo is a plane inside a dashed orbit ring."""
+        assert 'stroke-dasharray' in html   # dashed orbit circle
+        assert 'cx="12" cy="12"' in html    # centred on the icon
 
 
 # ─── 12. HTML: Attendee chip ──────────────────────────────────────────────────
