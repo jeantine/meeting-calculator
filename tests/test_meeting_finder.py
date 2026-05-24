@@ -664,6 +664,17 @@ class TestUIFeatures:
     def test_header_has_stacked_title_and_subtitle(self, html):
         assert "header-text" in html
 
+    def test_header_icon_uses_svg_not_emoji(self, html):
+        """Logo is an inline SVG (converging paths), not a plain emoji."""
+        assert '<svg' in html
+        assert 'header-icon' in html
+
+    def test_header_svg_has_converging_paths(self, html):
+        """Four curved paths converge on a central dot."""
+        assert 'stroke-linecap="round"' in html
+        # Central meeting-point dot
+        assert 'cx="12"' in html and 'cy="12"' in html
+
 
 # ─── 12. HTML: Attendee chip ──────────────────────────────────────────────────
 

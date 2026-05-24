@@ -58,11 +58,10 @@
     background: linear-gradient(135deg, #16a34a 0%, #22c55e 100%);
     border-radius: 9px;
     display: flex; align-items: center; justify-content: center;
-    font-size: 1rem;
     flex-shrink: 0;
     box-shadow: 0 2px 8px rgba(22,163,74,0.35), 0 0 0 1px rgba(22,163,74,0.15);
-    color: #fff;
   }
+  .header-icon svg { display: block; }
   .header-text {
     display: flex;
     flex-direction: column;
@@ -765,7 +764,19 @@
 </div>
 
 <header>
-  <div class="header-icon">✈</div>
+  <div class="header-icon">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M3.5 3.5 C7 7 9.5 9.5 12 12"   stroke="white" stroke-width="1.8" stroke-linecap="round" opacity="0.85"/>
+      <path d="M20.5 3.5 C17 7 14.5 9.5 12 12" stroke="white" stroke-width="1.8" stroke-linecap="round" opacity="0.85"/>
+      <path d="M3.5 20.5 C7 17 9.5 14.5 12 12" stroke="white" stroke-width="1.8" stroke-linecap="round" opacity="0.85"/>
+      <path d="M20.5 20.5 C17 17 14.5 14.5 12 12" stroke="white" stroke-width="1.8" stroke-linecap="round" opacity="0.85"/>
+      <circle cx="3.5"  cy="3.5"  r="1.5" fill="white" opacity="0.7"/>
+      <circle cx="20.5" cy="3.5"  r="1.5" fill="white" opacity="0.7"/>
+      <circle cx="3.5"  cy="20.5" r="1.5" fill="white" opacity="0.7"/>
+      <circle cx="20.5" cy="20.5" r="1.5" fill="white" opacity="0.7"/>
+      <circle cx="12"   cy="12"   r="3"   fill="white"/>
+    </svg>
+  </div>
   <div class="header-text">
     <h1>Global Meeting Finder</h1>
     <p>Find the optimal destination for teams travelling from anywhere in the world</p>
