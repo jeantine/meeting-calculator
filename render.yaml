@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: meeting-calculator
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python app.py
+    envVars:
+      - key: SERPAPI_KEY
+        sync: false        # set manually in Render dashboard — never committed
