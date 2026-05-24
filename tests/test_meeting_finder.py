@@ -669,10 +669,11 @@ class TestUIFeatures:
         assert '<svg' in html
         assert 'header-icon' in html
 
-    def test_header_svg_is_plane_orbit(self, html):
-        """Logo is a plane inside a dashed orbit ring."""
-        assert 'stroke-dasharray' in html   # dashed orbit circle
-        assert 'cx="12" cy="12"' in html    # centred on the icon
+    def test_header_svg_is_material_plane(self, html):
+        """Logo is the Material Design 'flight' plane icon (solid filled SVG path)."""
+        # The Material Design flight icon has this distinctive path sequence
+        assert 'M21 16v-2l-8-5V3.5' in html   # top of the MD flight path
+        assert 'stroke-dasharray' not in html  # no dashed orbit ring in this version
 
 
 # ─── 12. HTML: Attendee chip ──────────────────────────────────────────────────
