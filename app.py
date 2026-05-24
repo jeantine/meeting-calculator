@@ -584,6 +584,10 @@ def index():
 def world_map():
     return send_from_directory(_HERE, 'world-airports.svg', mimetype='image/svg+xml')
 
+@app.route('/favicon.svg')
+def favicon():
+    return send_from_directory(_HERE, 'favicon.svg', mimetype='image/svg+xml')
+
 @app.route('/api/search_city')
 def search_city():
     q = request.args.get('q', '').strip()
