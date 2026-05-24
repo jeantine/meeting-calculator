@@ -1,0 +1,1402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Global Meeting Finder</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:       #f4f6f8;
+    --surface:  #ffffff;
+    --surface2: #f0f2f5;
+    --border:   rgba(0,0,0,0.08);
+    --border2:  rgba(0,0,0,0.13);
+    --text:     #0f1117;
+    --muted:    #6b7280;
+    --faint:    #c4c9d4;
+    --green:    #16a34a;
+    --green-dim:#15803d;
+    --green-bg: rgba(22,163,74,0.08);
+    --green-glow: rgba(22,163,74,0.20);
+    --red:      #dc2626;
+    --red-bg:   rgba(220,38,38,0.08);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    font-weight: 400;
+    min-height: 100vh;
+  }
+
+  /* ── Header ── */
+  header {
+    padding: 0.9rem 2.5rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    background: #fff;
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    border-bottom: 1px solid var(--border);
+    box-shadow: 0 1px 12px rgba(0,0,0,0.06);
+  }
+  header::after {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 0; right: 0; height: 2px;
+    background: linear-gradient(90deg, #16a34a 0%, #22c55e 55%, #bbf7d0 100%);
+  }
+  .header-icon {
+    width: 36px; height: 36px;
+    background: linear-gradient(135deg, #16a34a 0%, #22c55e 100%);
+    border-radius: 9px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1rem;
+    flex-shrink: 0;
+    box-shadow: 0 2px 8px rgba(22,163,74,0.35), 0 0 0 1px rgba(22,163,74,0.15);
+    color: #fff;
+  }
+  .header-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+  }
+  header h1 {
+    font-size: 1.15rem;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    background: linear-gradient(115deg, #0f1117 35%, #16a34a 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  header p {
+    font-size: 0.75rem;
+    color: var(--muted);
+    font-weight: 400;
+    margin-left: 0;
+    letter-spacing: 0.01em;
+  }
+
+  /* ── Layout ── */
+  .container {
+    max-width: 1060px;
+    margin: 0 auto;
+    padding: 2.5rem 1.5rem;
+  }
+
+  /* ── Section titles ── */
+  .section-title {
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+  }
+  .section-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+  .section-title span.num {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.65rem;
+    background: var(--green-bg);
+    color: var(--green);
+    border: 1px solid rgba(34,197,94,0.25);
+    border-radius: 6px;
+    padding: 2px 7px;
+  }
+
+  /* ── Card wrapper ── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 1.5rem;
+  }
+
+  /* ── Attendee panel ── */
+  .attendee-panel { margin-bottom: 2rem; }
+
+  .search-row {
+    display: flex;
+    gap: 0.6rem;
+    margin-bottom: 0.8rem;
+  }
+  .search-wrap {
+    position: relative;
+    flex: 1;
+  }
+  input[type="text"] {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    border: 1px solid var(--border2);
+    border-radius: 10px;
+    background: var(--surface2);
+    font-family: 'Inter', sans-serif;
+    font-size: 0.9rem;
+    color: var(--text);
+    outline: none;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  input[type="text"]::placeholder { color: var(--muted); }
+  input[type="text"]:focus {
+    border-color: var(--green);
+    box-shadow: 0 0 0 3px var(--green-glow);
+  }
+  input.count-input {
+    width: 64px;
+    text-align: center;
+    flex: none;
+  }
+
+  .dropdown {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0; right: 0;
+    background: var(--surface2);
+    border: 1px solid var(--border2);
+    border-radius: 12px;
+    z-index: 100;
+    max-height: 280px;
+    overflow-y: auto;
+    box-shadow: 0 16px 40px rgba(0,0,0,0.5);
+  }
+  .dropdown-item {
+    padding: 0.7rem 1rem;
+    cursor: pointer;
+    border-bottom: 1px solid var(--border);
+    transition: background .1s;
+  }
+  .dropdown-item:first-child { border-radius: 12px 12px 0 0; }
+  .dropdown-item:last-child { border-bottom: none; border-radius: 0 0 12px 12px; }
+  .dropdown-item:hover { background: rgba(0,0,0,0.04); }
+  .dropdown-item.highlighted {
+    background: rgba(0,0,0,0.04);
+  }
+  .dropdown-item .loc { font-weight: 500; font-size: 0.88rem; color: var(--text); }
+  .dropdown-item .codes {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.72rem;
+    color: var(--muted);
+    margin-top: 3px;
+  }
+
+  .btn {
+    padding: 0.72rem 1.3rem;
+    border: 1px solid var(--border2);
+    border-radius: 10px;
+    background: var(--surface2);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    font-size: 0.88rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all .15s;
+    white-space: nowrap;
+  }
+  .btn:hover { background: var(--surface2); border-color: var(--green); color: var(--green); }
+  .btn.secondary {
+    background: transparent;
+    color: var(--muted);
+    border-color: var(--border);
+  }
+  .btn.secondary:hover { color: var(--text); border-color: var(--border2); background: var(--surface2); }
+  .btn.danger {
+    background: transparent;
+    color: var(--muted);
+    border-color: transparent;
+    padding: 0.3rem 0.5rem;
+    font-size: 1rem;
+    line-height: 1;
+    border-radius: 6px;
+  }
+  .btn.danger:hover { background: transparent; color: var(--text); }
+  .btn.go {
+    background: var(--green);
+    border-color: var(--green);
+    color: #0a1a0e;
+    font-size: 0.95rem;
+    font-weight: 600;
+    padding: 0.78rem 1.8rem;
+    border-radius: 12px;
+    box-shadow: 0 4px 20px var(--green-glow);
+  }
+  .btn.go:hover { background: #16a34a; border-color: #16a34a; box-shadow: 0 4px 24px rgba(34,197,94,0.35); }
+  .btn:disabled { opacity: 0.35; cursor: not-allowed; box-shadow: none; }
+  #addBtn:not(:disabled) {
+    background: var(--green);
+    border-color: var(--green);
+    color: #0a1a0e;
+    font-weight: 600;
+    box-shadow: 0 4px 20px var(--green-glow);
+  }
+  #addBtn:not(:disabled):hover { background: var(--green-dim); border-color: var(--green-dim); }
+
+  /* ── Attendee list ── */
+  .attendee-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    margin-bottom: 1.2rem;
+  }
+  .attendee-chip {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    padding: 0.65rem 1rem;
+    background: var(--green-bg);
+    border: 1px solid rgba(22,163,74,0.2);
+    border-radius: 10px;
+    animation: slideIn .2s ease;
+  }
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateY(-4px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .attendee-chip .chip-city { font-weight: 500; flex: 1; font-size: 0.9rem; }
+  .attendee-chip .chip-iatas {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.72rem;
+    color: var(--green-dim);
+  }
+  .attendee-chip .chip-count {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.75rem;
+    background: var(--green-bg);
+    color: var(--green);
+    border: 1px solid rgba(34,197,94,0.2);
+    padding: 2px 9px;
+    border-radius: 6px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .attendee-chip .chip-count:hover {
+    background: var(--green-glow);
+    border-color: rgba(34,197,94,0.4);
+  }
+  .chip-count-edit {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.75rem;
+    background: var(--green-bg);
+    color: var(--green);
+    border: 1px solid rgba(34,197,94,0.5);
+    padding: 2px 6px;
+    border-radius: 6px;
+    width: 4rem;
+    text-align: center;
+    outline: none;
+    box-shadow: 0 0 0 2px var(--green-glow);
+  }
+
+  /* ── Results ── */
+  .results-panel { display: none; }
+  .results-panel.visible { display: block; }
+
+  .tabs {
+    display: flex;
+    gap: 0.3rem;
+    margin-bottom: 1.2rem;
+    background: var(--surface2);
+    padding: 0.3rem;
+    border-radius: 10px;
+    width: fit-content;
+  }
+  .tab {
+    padding: 0.45rem 1.1rem;
+    cursor: pointer;
+    font-weight: 500;
+    font-size: 0.83rem;
+    border-radius: 7px;
+    transition: all .15s;
+    color: var(--muted);
+    border: none;
+    background: transparent;
+  }
+  .tab.active {
+    background: var(--surface);
+    color: var(--text);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+  }
+  .tab:not(.active):hover { color: var(--text); }
+
+  .tab-panel { display: none; }
+  .tab-panel.active {
+    display: block;
+    background: var(--surface);
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    overflow: hidden;
+  }
+
+  /* ── Destination table ── */
+  .dest-table { width: 100%; border-collapse: collapse; }
+  .dest-table th {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    text-align: left;
+    padding: 0.5rem 0.9rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .dest-table th.r { text-align: right; }
+  .dest-table td {
+    padding: 0.8rem 0.9rem;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+    font-size: 0.88rem;
+  }
+  .dest-table tr:hover td { background: rgba(0,0,0,0.04); cursor: pointer; }
+  .dest-table tr.focused td { background: rgba(0,0,0,0.04); cursor: pointer; }
+  .dest-table tr.selected td { background: var(--green-bg); }
+  .dest-table tr.selected td:first-child {
+    border-left: 3px solid var(--green);
+    padding-left: calc(0.9rem - 3px);
+  }
+
+  .rank-num {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.72rem;
+    color: var(--faint);
+  }
+  .iata-badge {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.75rem;
+    font-weight: 600;
+    background: var(--surface2);
+    color: var(--text);
+    border: 1px solid var(--border2);
+    padding: 3px 8px;
+    border-radius: 6px;
+  }
+  .iata-badge.home {
+    background: var(--green-bg);
+    color: var(--green);
+    border-color: rgba(34,197,94,0.25);
+  }
+  .city-name { font-weight: 500; color: var(--text); }
+  .airport-name { font-size: 0.75rem; color: var(--muted); margin-top: 2px; }
+  td.r { text-align: right; font-family: 'DM Mono', monospace; font-size: 0.82rem; color: var(--muted); white-space: nowrap; }
+  td.r.em { color: var(--text); font-size: 0.85rem; }
+  .routes-hint-cell { text-align: right; white-space: nowrap; width: 1%; }
+  .routes-hint-cell .routes-pill {
+    display: inline-block;
+    background: var(--green-bg);
+    color: var(--green);
+    border: 1px solid rgba(22,163,74,0.25);
+    font-size: 0.72rem;
+    font-weight: 500;
+    padding: 3px 8px;
+    border-radius: 6px;
+    opacity: 0;
+    transition: opacity .15s;
+  }
+  .dest-table tbody tr:hover .routes-pill,
+  .dest-table tr.focused .routes-pill { opacity: 1; }
+  .home-tag {
+    font-size: 0.68rem;
+    background: var(--green-bg);
+    color: var(--green);
+    border: 1px solid rgba(34,197,94,0.2);
+    padding: 1px 6px;
+    border-radius: 5px;
+    margin-left: 6px;
+    white-space: nowrap;
+  }
+
+  /* ── Route detail ── */
+  .route-detail {
+    margin-top: 1.5rem;
+    display: none;
+  }
+  .route-detail.visible { display: block; }
+  .route-dest-header {
+    background: linear-gradient(135deg, var(--surface2) 0%, rgba(34,197,94,0.08) 100%);
+    border: 1px solid var(--border2);
+    padding: 1.1rem 1.4rem;
+    border-radius: 14px 14px 0 0;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+  .route-dest-header .big-iata {
+    font-family: 'DM Mono', monospace;
+    font-size: 1.6rem;
+    font-weight: 600;
+    color: var(--green);
+  }
+  .route-dest-header .dest-info { flex: 1; }
+  .route-dest-header .dest-city {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .route-dest-header .dest-stats {
+    font-size: 0.78rem;
+    color: var(--muted);
+    margin-top: 3px;
+    font-family: 'DM Mono', monospace;
+  }
+
+  .attendee-routes {
+    border: 1px solid var(--border2);
+    border-top: none;
+    border-radius: 0 0 14px 14px;
+    overflow: hidden;
+  }
+  .attendee-route-block {
+    border-bottom: 1px solid var(--border);
+    animation: fadeIn .2s ease;
+  }
+  .attendee-route-block:last-child { border-bottom: none; }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  .attendee-route-header {
+    padding: 0.8rem 1.2rem;
+    background: var(--surface2);
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    flex-wrap: wrap;
+  }
+  .attendee-route-header .att-city { font-weight: 500; flex: 1; font-size: 0.9rem; }
+  .att-badge {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.72rem;
+    padding: 3px 8px;
+    border-radius: 6px;
+  }
+  .att-badge.home {
+    background: var(--green-bg);
+    color: var(--green);
+    border: 1px solid rgba(34,197,94,0.2);
+  }
+  .att-badge.dist {
+    background: rgba(255,255,255,0.05);
+    color: var(--muted);
+    border: 1px solid var(--border);
+  }
+  .att-badge.cost {
+    background: rgba(255,255,255,0.05);
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+  .dest-stats .em { color: var(--text); }
+
+  .legs-list { padding: 0.5rem 1.2rem 0.8rem; background: var(--surface); }
+  .leg-row {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    padding: 0.45rem 0;
+    font-size: 0.83rem;
+    border-bottom: 1px dashed var(--border);
+  }
+  .leg-row:last-child { border-bottom: none; }
+  .leg-iatas {
+    font-family: 'DM Mono', monospace;
+    font-weight: 600;
+    font-size: 0.83rem;
+    white-space: nowrap;
+    color: var(--text);
+  }
+  .leg-arrow { color: var(--green); }
+  .leg-cities { flex: 1; color: var(--muted); font-size: 0.78rem; }
+  .leg-airline {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.7rem;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    padding: 1px 6px;
+    border-radius: 5px;
+    color: var(--muted);
+  }
+  .leg-dist {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.75rem;
+    color: var(--muted);
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  /* ── Spinner ── */
+  .spinner-wrap {
+    display: none;
+    align-items: center;
+    gap: 0.8rem;
+    padding: 2rem;
+    color: var(--muted);
+    font-size: 0.88rem;
+  }
+  .spinner-wrap.visible { display: flex; }
+  .spinner {
+    width: 18px; height: 18px;
+    border: 2px solid var(--border2);
+    border-top-color: var(--green);
+    border-radius: 50%;
+    animation: spin .7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Empty / error states ── */
+  .msg {
+    padding: 1.5rem;
+    color: var(--muted);
+    font-size: 0.88rem;
+    text-align: center;
+    border: 1px dashed var(--border2);
+    border-radius: 10px;
+  }
+  .msg.error { color: var(--red); border-color: rgba(248,113,113,0.3); }
+
+  .find-btn-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 1.2rem;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+
+  /* ── Continent filter ── */
+  .filter-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+  }
+  .filter-label {
+    font-size: 0.75rem;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .pill {
+    padding: 0.3rem 0.8rem;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-family: 'Inter', sans-serif;
+    cursor: pointer;
+    background: transparent;
+    color: var(--muted);
+    transition: all .15s;
+    white-space: nowrap;
+    user-select: none;
+  }
+  .pill:hover { border-color: var(--green); color: var(--green); }
+  .pill.active {
+    background: var(--green-bg);
+    border-color: rgba(34,197,94,0.35);
+    color: var(--green);
+    font-weight: 500;
+  }
+
+  /* ── Price section ── */
+  .price-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    padding: 0.9rem 1.2rem;
+    background: var(--surface2);
+    border-top: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+  .price-toolbar label {
+    font-size: 0.82rem;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .price-toolbar input[type="number"] {
+    width: 60px;
+    padding: 0.35rem 0.5rem;
+    border: 1px solid var(--border2);
+    border-radius: 7px;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.85rem;
+    text-align: center;
+    background: var(--surface);
+    color: var(--text);
+    outline: none;
+  }
+  .price-toolbar input:focus { border-color: var(--green); }
+  .price-note {
+    font-size: 0.73rem;
+    color: var(--muted);
+    flex: 1;
+    text-align: right;
+  }
+
+  .price-results {
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .price-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.7rem 1.2rem;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.86rem;
+    animation: fadeIn .2s ease;
+  }
+  .price-row:last-child { border-bottom: none; }
+  .price-city { flex: 1; font-weight: 500; }
+  .price-origin {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.72rem;
+    color: var(--muted);
+  }
+  .price-amount {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.88rem;
+    font-weight: 600;
+    text-align: right;
+    color: var(--text);
+  }
+  .price-amount.free { color: var(--green); }
+  .price-amount.error { color: var(--red); font-size: 0.76rem; font-weight: 400; }
+  .price-subtotal {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.73rem;
+    color: var(--muted);
+    text-align: right;
+  }
+  .price-total-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.9rem 1.2rem;
+    background: var(--green);
+    color: #0a1a0e;
+    font-weight: 600;
+    border-radius: 0 0 14px 14px;
+  }
+  .price-total-row .label { font-size: 0.85rem; }
+  .price-total-row .amount {
+    font-family: 'DM Mono', monospace;
+    font-size: 1.05rem;
+  }
+  .price-dates {
+    font-size: 0.72rem;
+    color: rgba(10,26,14,0.6);
+    font-family: 'DM Mono', monospace;
+    margin-left: 0.8rem;
+  }
+  .carbon-badge {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.72rem;
+    background: var(--green-bg);
+    color: var(--green);
+    border: 1px solid rgba(34,197,94,0.2);
+    padding: 2px 7px;
+    border-radius: 5px;
+    white-space: nowrap;
+  }
+  .continent-badge {
+    font-size: 0.67rem;
+    font-family: 'DM Mono', monospace;
+    background: rgba(255,255,255,0.06);
+    color: var(--muted);
+    border: 1px solid var(--border);
+    padding: 1px 6px;
+    border-radius: 5px;
+    margin-left: 6px;
+    white-space: nowrap;
+  }
+  .carbon-na {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.72rem;
+    color: var(--faint);
+  }
+  .price-total-row .carbon-total {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.82rem;
+    color: rgba(10,26,14,0.65);
+    margin-left: 1rem;
+  }
+  .btn.prices {
+    background: var(--green-bg);
+    border-color: rgba(34,197,94,0.3);
+    color: var(--green);
+    font-size: 0.83rem;
+    padding: 0.5rem 1rem;
+    font-weight: 500;
+  }
+  .btn.prices:hover { background: rgba(34,197,94,0.18); }
+
+  /* ── World map background ── */
+  .world-map-bg {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+  .world-map-bg img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    opacity: 0.12;
+  }
+  body > * { position: relative; z-index: 1; }
+</style>
+</head>
+<body>
+
+<div class="world-map-bg">
+  <img src="/world-airports.svg" alt="">
+</div>
+
+<header>
+  <div class="header-icon">✈</div>
+  <div class="header-text">
+    <h1>Global Meeting Finder</h1>
+    <p>Find the optimal destination for teams travelling from anywhere in the world</p>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- ── Step 1: Attendees ── -->
+  <div class="attendee-panel">
+    <div class="section-title">
+      <span class="num">01</span> Add Attendees
+    </div>
+
+    <div class="search-row">
+      <div class="search-wrap">
+        <input type="text" id="citySearch" placeholder="Type a city name…" autocomplete="off">
+        <div class="dropdown" id="dropdown" style="display:none"></div>
+      </div>
+      <input type="text" id="countInput" class="count-input" value="1" placeholder="#" title="Number of attendees">
+      <button class="btn secondary" id="addBtn" disabled>Add</button>
+    </div>
+
+    <div class="attendee-list" id="attendeeList"></div>
+
+    <div class="find-btn-row">
+      <div class="filter-bar" id="continentFilter">
+        <span class="filter-label">Destination continent:</span>
+        <span class="pill active" data-continent="Any">Any</span>
+        <span class="pill" data-continent="Africa">Africa</span>
+        <span class="pill" data-continent="Asia">Asia</span>
+        <span class="pill" data-continent="Europe">Europe</span>
+        <span class="pill" data-continent="North America">N. America</span>
+        <span class="pill" data-continent="Oceania">Oceania</span>
+        <span class="pill" data-continent="South America">S. America</span>
+      </div>
+      <button class="btn go" id="findBtn" disabled>Find Best Locations →</button>
+    </div>
+  </div>
+
+  <!-- ── Step 2: Results ── -->
+  <div class="results-panel" id="resultsPanel">
+
+    <div class="section-title">
+      <span class="num">02</span> Best Meeting Destinations
+    </div>
+
+    <div class="spinner-wrap" id="spinner">
+      <div class="spinner"></div>
+      <span>Calculating optimal destinations…</span>
+    </div>
+
+    <div id="resultsContent" style="display:none">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1rem; flex-wrap:wrap; gap:0.5rem;">
+        <div class="tabs" style="margin-bottom:0">
+          <div class="tab active" data-tab="overall">Top 10 Overall</div>
+          <div class="tab" data-tab="home">Attendee Home Cities</div>
+        </div>
+        <span style="font-size:0.75rem; color:var(--muted);">Click a row to see routes per attendee →</span>
+      </div>
+
+      <div class="tab-panel active" id="tab-overall">
+        <table class="dest-table" id="overallTable">
+          <thead>
+            <tr>
+              <th>#</th><th>IATA</th><th>City</th><th>Continent</th>
+              <th class="r">Est. Cost (USD)</th><th class="r">Est. Carbon</th>
+              <th class="r">Total Dist</th><th class="r">Avg Dist</th>
+              <th class="r">Avg Flights</th><th></th>
+            </tr>
+          </thead>
+          <tbody id="overallBody"></tbody>
+        </table>
+      </div>
+
+      <div class="tab-panel" id="tab-home">
+        <table class="dest-table" id="homeTable">
+          <thead>
+            <tr>
+              <th>#</th><th>IATA</th><th>City</th><th>Continent</th>
+              <th class="r">Est. Cost (USD)</th><th class="r">Est. Carbon</th>
+              <th class="r">Total Dist</th><th class="r">Avg Dist</th>
+              <th class="r">Avg Flights</th><th>Local Attendees</th><th></th>
+            </tr>
+          </thead>
+          <tbody id="homeBody"></tbody>
+        </table>
+      </div>
+
+      <!-- Route detail -->
+      <div class="route-detail" id="routeDetail">
+        <div class="route-dest-header" id="routeHeader"></div>
+        <div class="attendee-routes" id="routeBody">
+          <div class="spinner-wrap" id="routeSpinner">
+            <div class="spinner"></div>
+            <span>Loading routes…</span>
+          </div>
+        </div>
+
+        <!-- Price lookup -->
+        <div class="price-toolbar" id="priceToolbar" style="display:none">
+          <span class="price-note">Estimates shown above are distance-based</span>
+          <div style="display:flex;align-items:center;gap:0.6rem;margin-left:auto">
+            <label style="font-size:0.8rem;color:var(--mid);white-space:nowrap">Weeks ahead:</label>
+            <input type="number" id="weeksInput" value="8" min="1" max="52"
+                   style="width:55px;padding:0.35rem 0.5rem;border:1.5px solid var(--light);border-radius:4px;font-family:'DM Mono',monospace;font-size:0.85rem;text-align:center">
+            <button class="btn prices" id="getLiveBtn">✈ Get Live Prices (Google Flights)</button>
+          </div>
+        </div>
+
+        <div id="priceResults"></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ── State ──
+let attendees      = [];   // [{city, iatas, count}]
+let selectedIata   = null;
+let focusedIata    = null;
+let focusedRowEl   = null;
+let pendingCity    = null; // {location, iatas}
+let searchTimer    = null;
+let currentResults = null;
+
+// ── Elements ──
+const citySearch  = document.getElementById('citySearch');
+const dropdown    = document.getElementById('dropdown');
+const countInput  = document.getElementById('countInput');
+const addBtn      = document.getElementById('addBtn');
+const findBtn     = document.getElementById('findBtn');
+const attendeeList= document.getElementById('attendeeList');
+const resultsPanel= document.getElementById('resultsPanel');
+const spinner     = document.getElementById('spinner');
+const resultsContent = document.getElementById('resultsContent');
+const overallBody = document.getElementById('overallBody');
+const homeBody    = document.getElementById('homeBody');
+const routeDetail = document.getElementById('routeDetail');
+const routeHeader = document.getElementById('routeHeader');
+const routeBody   = document.getElementById('routeBody');
+const routeSpinner= document.getElementById('routeSpinner');
+
+// ── City search ──
+let dropdownActiveIdx = -1;
+
+citySearch.addEventListener('input', () => {
+  const q = citySearch.value.trim();
+  pendingCity = null;
+  addBtn.disabled = true;
+  dropdownActiveIdx = -1;
+  clearTimeout(searchTimer);
+  if (q.length < 2) { dropdown.style.display = 'none'; return; }
+  searchTimer = setTimeout(() => fetchCities(q), 250);
+});
+
+citySearch.addEventListener('keydown', e => {
+  if (e.key === 'Tab' && !e.shiftKey) {
+    e.preventDefault();
+    findBtn.focus();
+    return;
+  }
+  const items = dropdown.querySelectorAll('.dropdown-item');
+  if (!items.length || dropdown.style.display === 'none') return;
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    dropdownActiveIdx = Math.min(dropdownActiveIdx + 1, items.length - 1);
+    updateDropdownHighlight(items);
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    dropdownActiveIdx = Math.max(dropdownActiveIdx - 1, 0);
+    updateDropdownHighlight(items);
+  } else if (e.key === 'Enter' && dropdownActiveIdx >= 0) {
+    e.preventDefault();
+    selectDropdownItem(dropdownActiveIdx);
+  } else if (e.key === 'Escape') {
+    dropdown.style.display = 'none';
+    dropdownActiveIdx = -1;
+  }
+});
+
+function updateDropdownHighlight(items) {
+  items.forEach((el, i) => el.classList.toggle('highlighted', i === dropdownActiveIdx));
+  if (dropdownActiveIdx >= 0) items[dropdownActiveIdx].scrollIntoView({ block: 'nearest' });
+}
+
+function selectDropdownItem(idx) {
+  const d = dropdown._data[idx];
+  if (!d) return;
+  pendingCity = d;
+  citySearch.value = d.location;
+  dropdown.style.display = 'none';
+  dropdownActiveIdx = -1;
+  addBtn.disabled = false;
+  countInput.focus();
+}
+
+async function fetchCities(q) {
+  const res  = await fetch(`/api/search_city?q=${encodeURIComponent(q)}`);
+  const data = await res.json();
+  if (!data.length) { dropdown.style.display = 'none'; return; }
+  dropdown.innerHTML = data.map((item, i) =>
+    `<div class="dropdown-item" data-idx="${i}">
+      <div class="loc">${item.location} <span style="font-size:0.72rem;color:var(--muted)">${item.continent || ''}</span></div>
+      <div class="codes">${item.airports.map(a => `${a.iata} · ${a.name}`).join('  |  ')}</div>
+    </div>`
+  ).join('');
+  dropdown._data = data;
+  dropdownActiveIdx = -1;
+  dropdown.style.display = 'block';
+}
+
+dropdown.addEventListener('click', e => {
+  const item = e.target.closest('.dropdown-item');
+  if (!item) return;
+  selectDropdownItem(+item.dataset.idx);
+});
+
+document.addEventListener('click', e => {
+  if (!citySearch.contains(e.target) && !dropdown.contains(e.target))
+    dropdown.style.display = 'none';
+});
+
+// ── Add attendee ──
+addBtn.addEventListener('click', addAttendee);
+countInput.addEventListener('keydown', e => { if (e.key === 'Enter') addAttendee(); });
+
+function addAttendee() {
+  if (!pendingCity) return;
+  const count = Math.max(1, parseInt(countInput.value) || 1);
+  attendees.push({ city: pendingCity.location, iatas: pendingCity.iatas, count });
+  renderAttendees();
+  citySearch.value = '';
+  countInput.value = '1';
+  pendingCity = null;
+  addBtn.disabled = true;
+  dropdown.style.display = 'none';
+  findBtn.disabled = attendees.length < 2;
+  citySearch.focus();
+  if (currentResults) {
+    currentResults = null;
+    resultsPanel.classList.remove('visible');
+    routeDetail.classList.remove('visible');
+    selectedIata = null;
+  }
+}
+
+function renderAttendees() {
+  attendeeList.innerHTML = attendees.map((a, i) => `
+    <div class="attendee-chip">
+      <span class="chip-city">${a.city}</span>
+      <span class="chip-iatas">${a.iatas.join(' · ')}</span>
+      <span class="chip-count" onclick="editAttendeeCount(${i})" title="Click to edit">${a.count} traveller${a.count > 1 ? 's' : ''}</span>
+      <button class="btn danger" tabindex="-1" onclick="removeAttendee(${i})">✕</button>
+    </div>
+  `).join('');
+  findBtn.disabled = attendees.length < 2;
+}
+
+function editAttendeeCount(i) {
+  const chip = attendeeList.querySelectorAll('.attendee-chip')[i];
+  const countSpan = chip.querySelector('.chip-count');
+  const current = attendees[i].count;
+
+  const input = document.createElement('input');
+  input.type = 'number';
+  input.min = 1;
+  input.value = current;
+  input.className = 'chip-count-edit';
+  countSpan.replaceWith(input);
+  input.focus();
+  input.select();
+
+  const save = () => {
+    const val = Math.max(1, parseInt(input.value) || 1);
+    if (val !== attendees[i].count) {
+      attendees[i].count = val;
+      if (currentResults) {
+        currentResults = null;
+        resultsPanel.classList.remove('visible');
+        routeDetail.classList.remove('visible');
+        selectedIata = null; focusedIata = null; focusedRowEl = null;
+      }
+    }
+    renderAttendees();
+    setTimeout(() => findBtn.focus(), 0);
+  };
+
+  input.addEventListener('blur', save);
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+    if (e.key === 'Escape') { renderAttendees(); citySearch.focus(); }
+  });
+}
+
+function removeAttendee(i) {
+  attendees.splice(i, 1);
+  renderAttendees();
+  if (attendees.length < 2) {
+    resultsPanel.classList.remove('visible');
+    routeDetail.classList.remove('visible');
+  }
+}
+
+// ── Find destinations ──
+findBtn.addEventListener('click', async () => {
+  // Always return to Top 10 Overall tab
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelector('.tab[data-tab="overall"]').classList.add('active');
+  document.getElementById('tab-overall').classList.add('active');
+
+  resultsPanel.classList.add('visible');
+  resultsContent.style.display = 'none';
+  spinner.classList.add('visible');
+  routeDetail.classList.remove('visible');
+  selectedIata = null;
+
+  const res  = await fetch('/api/find_destinations', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      attendees,
+      continent_filter: activeContinent === 'Any' ? null : activeContinent
+    })
+  });
+  const data = await res.json();
+  spinner.classList.remove('visible');
+
+  if (data.error) {
+    resultsContent.innerHTML = `<div class="msg error">${data.error}</div>`;
+    resultsContent.style.display = 'block';
+    return;
+  }
+
+  currentResults = data;
+  renderTables(data);
+  resultsContent.style.display = 'block';
+
+  const firstRow = document.querySelector('#overallTable tbody tr');
+  if (firstRow) focusDest(firstRow.dataset.iata, firstRow);
+
+  findBtn.blur();
+
+});
+
+// ── Keyboard navigation for results table ──
+function focusDest(iata, rowEl) {
+  document.querySelectorAll('.dest-table tr').forEach(r => r.classList.remove('focused'));
+  rowEl.classList.add('focused');
+  focusedIata  = iata;
+  focusedRowEl = rowEl;
+  rowEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+document.addEventListener('keydown', e => {
+  if (!currentResults) return;
+  if (dropdown.style.display !== 'none') return;   // let dropdown handle its own Enter
+  if (document.activeElement === countInput) return; // let count input handle Enter
+  if (document.activeElement?.classList.contains('chip-count-edit')) return;
+  if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'Enter') return;
+
+  const activePanel = document.querySelector('.tab-panel.active');
+  const rows = Array.from(activePanel?.querySelectorAll('tbody tr') || []);
+  if (!rows.length) return;
+
+  const idx = focusedRowEl ? rows.indexOf(focusedRowEl) : -1;
+
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    const next = rows[Math.min(idx + 1, rows.length - 1)];
+    focusDest(next.dataset.iata, next);
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    const prev = rows[Math.max(idx - 1, 0)];
+    focusDest(prev.dataset.iata, prev);
+  } else if (e.key === 'Enter' && focusedIata) {
+    selectDest(focusedIata, focusedRowEl);
+  }
+});
+
+resultsPanel.addEventListener('mousemove', () => {
+  if (!focusedRowEl) return;
+  document.querySelectorAll('.dest-table tr.focused').forEach(r => r.classList.remove('focused'));
+  focusedIata  = null;
+  focusedRowEl = null;
+});
+
+// ── Render tables ──
+function fmt(km) { return km.toLocaleString() + ' km'; }
+
+function renderTables(data) {
+  const totalAttendees = attendees.reduce((s, a) => s + a.count, 0);
+
+  overallBody.innerHTML = data.overall.map((d, i) => `
+    <tr data-iata="${d.iata}" onclick="selectDest('${d.iata}', this)">
+      <td><span class="rank-num">${i+1}</span></td>
+      <td><span class="iata-badge${d.is_home ? ' home' : ''}">${d.iata}</span></td>
+      <td>
+        <div class="city-name">${d.city}, ${d.country}
+          ${d.is_home ? '<span class="home-tag">home city</span>' : ''}
+        </div>
+        <div class="airport-name">${d.name}</div>
+      </td>
+      <td><span class="continent-badge">${d.continent || ''}</span></td>
+      <td class="r em">${d.est_cost != null ? 'US$' + d.est_cost.toLocaleString() : '—'}</td>
+      <td class="r em">${d.est_carbon != null ? d.est_carbon.toLocaleString() + ' kg' : '—'}</td>
+      <td class="r">${fmt(d.total_dist)}</td>
+      <td class="r">${fmt(d.avg_dist)}</td>
+      <td class="r">${d.avg_hops}</td>
+      <td class="routes-hint-cell"><span class="routes-pill">View routes →</span></td>
+    </tr>
+  `).join('');
+
+  homeBody.innerHTML = data.home.map((d, i) => `
+    <tr data-iata="${d.iata}" onclick="selectDest('${d.iata}', this)">
+      <td><span class="rank-num">${i+1}</span></td>
+      <td><span class="iata-badge home">${d.iata}</span></td>
+      <td>
+        <div class="city-name">${d.city}, ${d.country}</div>
+        <div class="airport-name">${d.name}</div>
+      </td>
+      <td><span class="continent-badge">${d.continent || ''}</span></td>
+      <td class="r em">${d.est_cost != null ? 'US$' + d.est_cost.toLocaleString() : '—'}</td>
+      <td class="r em">${d.est_carbon != null ? d.est_carbon.toLocaleString() + ' kg' : '—'}</td>
+      <td class="r">${fmt(d.total_dist)}</td>
+      <td class="r">${fmt(d.avg_dist)}</td>
+      <td class="r">${d.avg_hops}</td>
+      <td class="r">${d.local_count} local</td>
+      <td class="routes-hint-cell"><span class="routes-pill">View routes →</span></td>
+    </tr>
+  `).join('');
+
+}
+
+// ── Continent filter ──
+let activeContinent = 'Any';
+
+document.querySelectorAll('#continentFilter .pill').forEach(pill => {
+  pill.addEventListener('click', () => {
+    document.querySelectorAll('#continentFilter .pill').forEach(p => p.classList.remove('active'));
+    pill.classList.add('active');
+    activeContinent = pill.dataset.continent;
+    if (currentResults) findBtn.click();
+  });
+});
+
+
+
+// ── Tabs ──
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById(`tab-${tab.dataset.tab}`).classList.add('active');
+  });
+});
+
+// ── Select destination → load routes ──
+async function selectDest(iata, row) {
+  if (selectedIata === iata) return;
+  selectedIata = iata;
+  focusedIata  = iata;
+  focusedRowEl = row;
+
+  // Highlight row
+  document.querySelectorAll('.dest-table tr').forEach(r => r.classList.remove('selected', 'focused'));
+  row.classList.add('selected');
+
+  routeDetail.classList.add('visible');
+  routeHeader.innerHTML = '';
+  routeBody.innerHTML   = '';
+  routeBody.appendChild(routeSpinner);
+  routeSpinner.classList.add('visible');
+
+  const res  = await fetch('/api/get_routes', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ attendees, dest_iata: iata })
+  });
+  const data = await res.json();
+  routeSpinner.classList.remove('visible');
+
+  // Header
+  const totalDist = data.routes.reduce((s, r) => s + (r.dist_km || 0) * r.count, 0);
+  const totalAtt  = attendees.reduce((s, a) => s + a.count, 0);
+  const estTotalCost   = data.routes.reduce((s, r) => s + (r.est_price_group || 0), 0);
+  const estTotalCarbon = data.routes.reduce((s, r) => s + (r.est_carbon_group || 0), 0);
+  routeHeader.innerHTML = `
+    <div class="big-iata">${data.dest_iata}</div>
+    <div class="dest-info">
+      <div class="dest-city">${data.dest.city}, ${data.dest.country}</div>
+      <div class="dest-stats">
+        ${data.dest.name}
+        ${estTotalCost > 0 ? `&nbsp;·&nbsp; <span class="em">est. US$${estTotalCost.toLocaleString()} total</span>` : ''}
+        ${estTotalCarbon > 0 ? `&nbsp;·&nbsp; <span class="em">🌿 ${estTotalCarbon.toLocaleString()} kg CO₂</span>` : ''}
+        &nbsp;·&nbsp; total ${totalDist.toLocaleString()} km &nbsp;·&nbsp;
+        avg ${Math.round(totalDist/totalAtt).toLocaleString()} km/traveller
+      </div>
+    </div>
+  `;
+
+  // Per-attendee routes
+  routeBody.innerHTML = data.routes.map(r => {
+    if (r.home) return `
+      <div class="attendee-route-block">
+        <div class="attendee-route-header">
+          <span class="att-city">${r.city}</span>
+          <span class="att-badge home">🏠 Home city — no travel needed</span>
+          <span class="att-badge dist">${r.count} traveller${r.count>1?'s':''}</span>
+        </div>
+      </div>`;
+
+    if (r.error) return `
+      <div class="attendee-route-block">
+        <div class="attendee-route-header">
+          <span class="att-city">${r.city}</span>
+          <span class="att-badge dist" style="color:var(--accent)">${r.error}</span>
+        </div>
+      </div>`;
+
+    const legs = r.legs.map(l => `
+      <div class="leg-row">
+        <span class="leg-iatas">${l.src} <span class="leg-arrow">→</span> ${l.dst}</span>
+        <span class="leg-cities">${l.src_city} → ${l.dst_city}</span>
+        <span class="leg-airline" title="${l.airline_name || l.airline}">${l.airline}</span>
+        <span class="leg-dist">${l.dist_km.toLocaleString()} km</span>
+      </div>`).join('');
+
+    const estBadge = r.est_price_person
+      ? `<span class="att-badge cost">est. US$${r.est_price_person.toLocaleString()}/person · 🌿 ${r.est_carbon_person} kg CO₂</span>`
+      : '';
+    return `
+      <div class="attendee-route-block">
+        <div class="attendee-route-header">
+          <span class="att-city">${r.city}</span>
+          ${estBadge}
+          <span class="att-badge dist">${r.hops} flight${r.hops>1?'s':''} · ${r.dist_km.toLocaleString()} km</span>
+          <span class="att-badge dist">${r.count} traveller${r.count>1?'s':''}</span>
+        </div>
+        <div class="legs-list">${legs}</div>
+      </div>`;
+  }).join('');
+
+  // Show price toolbar now routes are loaded
+  document.getElementById('priceToolbar').style.display = 'flex';
+  document.getElementById('priceResults').innerHTML = '';
+
+  // Scroll so the price toolbar (bottom of route detail) is visible
+  document.getElementById('priceToolbar').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+// ── Fetch indicative prices ──
+document.getElementById('getLiveBtn').addEventListener('click', async () => {
+  const btn      = document.getElementById('getLiveBtn');
+  const priceDiv = document.getElementById('priceResults');
+  const weeks    = parseInt(document.getElementById('weeksInput').value) || 8;
+
+  btn.disabled = true;
+  btn.textContent = 'Fetching live prices…';
+  priceDiv.innerHTML = '<div class="price-row"><span class="price-city" style="color:var(--mid)">Searching Google Flights via SerpApi…</span></div>';
+
+  const res  = await fetch('/api/get_live_prices', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ attendees, dest_iata: selectedIata, weeks_ahead: weeks })
+  });
+  const data = await res.json();
+
+  btn.disabled = false;
+  btn.textContent = '✈ Get Live Prices (Google Flights)';
+
+  if (data.error) {
+    priceDiv.innerHTML = `<div class="price-row"><span class="price-city price-amount error">⚠ ${data.error}</span></div>`;
+    return;
+  }
+
+  const rows = data.results.map(r => {
+    if (r.home) return `
+      <div class="price-row">
+        <span class="price-city">${r.city}</span>
+        <span class="price-origin">home city</span>
+        <span class="price-amount free">No travel cost</span>
+        <span class="carbon-badge">🌿 0 kg CO₂</span>
+      </div>`;
+    if (r.error) return `
+      <div class="price-row">
+        <span class="price-city">${r.city}</span>
+        <span class="price-origin">${r.origin || ''}</span>
+        <span class="price-amount error">⚠ ${r.error}</span>
+      </div>`;
+    const carbonBadge = r.carbon_kg_person != null
+      ? `<span class="carbon-badge">🌿 ${r.carbon_kg_person} kg CO₂/person${r.count > 1 ? ` · ${r.carbon_kg_group} kg total` : ''}</span>`
+      : `<span class="carbon-na">CO₂ n/a</span>`;
+    const sourceBadge = r.source === 'live'
+      ? '<span style="font-size:0.7rem;background:#e8f0fe;color:#1a56db;border:1px solid #b3c5f5;padding:1px 6px;border-radius:2px;margin-left:4px">live</span>'
+      : '<span style="font-size:0.7rem;background:var(--cream);color:var(--mid);border:1px solid var(--light);padding:1px 6px;border-radius:2px;margin-left:4px">est.</span>';
+    return `
+      <div class="price-row">
+        <span class="price-city">${r.city}</span>
+        <span class="price-origin">${r.origin} → ${data.dest_iata} · ${r.dist_km ? r.dist_km.toLocaleString() + ' km' : ''} · ${r.hops === 0 ? 'direct' : r.hops + ' stop' + (r.hops > 1 ? 's' : '')} ${sourceBadge}</span>
+        <div style="text-align:right">
+          <div class="price-amount">US$${r.price_per_person.toLocaleString()} / person</div>
+          ${r.count > 1 ? `<div class="price-subtotal">${r.count} × US$${r.price_per_person.toLocaleString()} = US$${r.total_price.toLocaleString()} total</div>` : ''}
+        </div>
+        ${carbonBadge}
+      </div>`;
+  }).join('');
+
+  const carbonTotalHtml = data.total_carbon_kg != null
+    ? `<span class="carbon-total">🌿 ${data.total_carbon_kg.toLocaleString()} kg CO₂ total</span>`
+    : '';
+
+  const totalHtml = data.total_price > 0 ? `
+    <div class="price-total-row">
+      <span class="label">Total fares
+        <span class="price-dates">${data.outbound_date} → ${data.return_date}</span>
+      </span>
+      <span style="display:flex;align-items:center">
+        <span class="amount">US$${data.total_price.toLocaleString()}</span>
+        ${carbonTotalHtml}
+      </span>
+    </div>` : '';
+
+  priceDiv.innerHTML = `<div class="price-results">${rows}${totalHtml}</div>`;
+  priceDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+});
+
+citySearch.focus();
+</script>
+</body>
+</html>
