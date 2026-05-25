@@ -739,6 +739,24 @@ class TestAttendeeChip:
         """Delete × buttons must have tabindex=-1 so Tab skips them."""
         assert 'tabindex="-1"' in html
 
+    def test_deleting_attendee_clears_results(self, html):
+        """
+        removeAttendee() must always reset currentResults and hide both panels,
+        not only when the attendee count drops below 2.
+        Previously the guard `if (attendees.length < 2)` meant results stayed
+        visible after deleting one of three attendees — now they're always cleared.
+        """
+        import re
+        # Find the removeAttendee function body
+        match = re.search(r'function removeAttendee\([^)]*\)\s*\{([^}]+)\}', html, re.DOTALL)
+        assert match, "removeAttendee function not found"
+        body = match.group(1)
+        assert "currentResults = null"                    in body
+        assert "resultsPanel.classList.remove('visible')" in body
+        assert "routeDetail.classList.remove('visible')"  in body
+        # Must NOT be conditional on attendee count
+        assert "if (attendees.length" not in body
+
 
 # ─── 13. HTML: Auto-focus first result row ────────────────────────────────────
 

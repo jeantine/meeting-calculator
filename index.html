@@ -1069,11 +1069,10 @@ function editAttendeeCount(i) {
 
 function removeAttendee(i) {
   attendees.splice(i, 1);
+  currentResults = null;
+  resultsPanel.classList.remove('visible');
+  routeDetail.classList.remove('visible');
   renderAttendees();
-  if (attendees.length < 2) {
-    resultsPanel.classList.remove('visible');
-    routeDetail.classList.remove('visible');
-  }
 }
 
 // ── Find destinations ──
