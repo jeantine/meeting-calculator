@@ -1003,6 +1003,8 @@ class TestRoundTripPricing:
         A tolerance of ±2 is allowed because the API stores dist_km as
         round(actual_dist), so recomputing estimate_fare on the stored integer
         can differ from the original float computation by 1-2 dollars.
+        Origin/dest IATAs must be passed so the region-pair multiplier and hub
+        discount are applied consistently in both the API and this test.
         """
         payload = {
             "attendees": [{"city": "Vienna", "iatas": ["VIE"], "count": 1}],
@@ -1012,7 +1014,7 @@ class TestRoundTripPricing:
         route = res.get_json()["routes"][0]
         dist  = route["dist_km"]
         hops  = route["hops"]
-        oneway_price, _ = estimate_fare(dist, hops)
+        oneway_price, _ = estimate_fare(dist, hops, "VIE", "LHR")
         assert abs(route["est_price_person"] - oneway_price * 2) <= 2, (
             f"est_price_person={route['est_price_person']} "
             f"but oneway*2={oneway_price * 2} (dist_km may differ slightly from "
@@ -1438,6 +1440,50 @@ class TestGetContinent:
             assert actual == continent, (
                 f"{iata} ({info['lat']}, {info['lon']}): "
                 f"expected {continent}, got {actual}"
+            )
+
+    def test_athens_is_europe_not_africa(self):
+        # ATH: 37.9°N, 23.9°E — previously misclassified as Africa because
+        # the Africa bounding box (-40<lat<38, -20<lon<55) was checked first.
+        # Europe check must come before Africa.
+        assert get_continent(37.9, 23.9) == "Europe"
+
+    def test_dubai_is_asia_not_africa(self):
+        # DXB: 25.3°N, 55.4°E — Arabian Peninsula airports were inside the
+        # Africa box (lat<38, lon<55) before the Middle East / Asia check
+        # was reordered ahead of Africa.
+        assert get_continent(25.3, 55.4) == "Asia"
+
+    def test_riyadh_is_asia_not_africa(self):
+        # Riyadh: 24.7°N, 46.7°E
+        assert get_continent(24.7, 46.7) == "Asia"
+
+    def test_mediterranean_europe_airports_are_europe(self):
+        # Spot-check a few Mediterranean European airports that sit close to
+        # the Africa bounding-box border.
+        cases = {
+            "ATH": (37.94, 23.95),   # Athens
+            "MLA": (35.86, 14.48),   # Malta
+            "PMI": (39.55,  2.74),   # Palma de Mallorca
+        }
+        for label, (lat, lon) in cases.items():
+            result = get_continent(lat, lon)
+            assert result == "Europe", (
+                f"{label} ({lat}, {lon}) classified as {result!r}, expected 'Europe'"
+            )
+
+    def test_gulf_airports_are_asia(self):
+        # Gulf-state airports that were previously misclassified as Africa.
+        cases = {
+            "DXB": (25.25, 55.36),   # Dubai
+            "DOH": (25.27, 51.61),   # Doha
+            "AUH": (24.43, 54.65),   # Abu Dhabi
+            "RUH": (24.96, 46.70),   # Riyadh
+        }
+        for label, (lat, lon) in cases.items():
+            result = get_continent(lat, lon)
+            assert result == "Asia", (
+                f"{label} ({lat}, {lon}) classified as {result!r}, expected 'Asia'"
             )
 
 

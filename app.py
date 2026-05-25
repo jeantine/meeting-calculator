@@ -58,6 +58,11 @@ def get_continent(lat, lon):
     Returns one of: Africa, Antarctica, Asia, Europe,
                     North America, Oceania, South America
     Uses a polygon-free bounding-box approach — accurate for airport use.
+
+    Check order matters: Middle East and Europe are tested before the broad
+    Africa box so that Gulf-state airports (UAE, Saudi Arabia, Kuwait …) and
+    southern-European airports (Greece, Malta, Cyprus …) are not swallowed
+    by the Africa latitude band.
     """
     # Antarctica
     if lat < -60:
@@ -80,23 +85,24 @@ def get_continent(lat, lon):
     if lat > 55 and -75 < lon < -10:
         return "North America"
 
+    # Middle East / Arabian Peninsula — must come before Africa so that Gulf
+    # airports (DXB, DOH, RUH …) aren't swallowed by the Africa lat/lon box.
+    if 12 < lat < 38 and 32 < lon < 65:
+        return "Asia"
+
+    # Europe — must come before Africa so that Mediterranean European airports
+    # (ATH, LCA, MLA …) at ~35-38 °N aren't caught by the Africa box.
+    if 35 < lat < 72 and -25 < lon < 65:
+        return "Europe"
+
     # Africa
     if -40 < lat < 38 and -20 < lon < 55:
         return "Africa"
 
-    # Europe (west of Ural mountains, roughly lon < 65)
-    if 35 < lat < 72 and -25 < lon < 65:
-        return "Europe"
-
-    # Asia (everything east of Europe / Urals that isn't Oceania)
+    # Asia (everything east of Europe / Urals that isn't already matched)
     if -10 < lat < 80 and 25 < lon <= 180:
         return "Asia"
-    # Russia east of Urals falls here too
     if 40 < lat < 82 and 65 < lon <= 180:
-        return "Asia"
-
-    # Middle East / Arabian peninsula (overlaps Africa/Asia boxes above)
-    if 12 < lat < 42 and 32 < lon < 65:
         return "Asia"
 
     return "Unknown"
@@ -311,9 +317,9 @@ def find_meeting_destinations(attendees, top_n=10, continent_filter=None):
                 continue
             result = dijkstra_all(origin_iata)
             for dest, (h, d) in result.items():
-                cur = merged.get(dest, (math.inf, math.inf))
+                cur = merged.get(dest, (math.inf, math.inf, None))
                 if h < cur[0] or (h == cur[0] and d < cur[1]):
-                    merged[dest] = (h, d)
+                    merged[dest] = (h, d, origin_iata)   # track best origin
         dist_maps[iata_tuple] = merged
 
     all_origin_iatas = set(i for iatas in unique_origins for i in iatas)
@@ -361,11 +367,11 @@ def find_meeting_destinations(attendees, top_n=10, continent_filter=None):
                 if cost is None:
                     reachable = False
                     break
-                h, d = cost
+                h, d, best_origin = cost
                 total_hops  += h * total_count
                 total_dist  += d * total_count
                 # Estimate return fare and carbon for this group
-                oneway_price, oneway_carbon = estimate_fare(d, h)
+                oneway_price, oneway_carbon = estimate_fare(d, h, best_origin, dest)
                 total_price  += oneway_price  * 2 * total_count
                 total_carbon += oneway_carbon * 2 * total_count
         if reachable:
@@ -457,13 +463,13 @@ def get_routes_for_destination(attendees, dest_iata):
             })
             continue
 
-        best_path, best_hops, best_dist = None, math.inf, math.inf
+        best_path, best_hops, best_dist, best_origin_iata = None, math.inf, math.inf, None
         for origin_iata in a['iatas']:
             path, hops, dist = find_best_route(origin_iata, dest_iata)
             if path is None:
                 continue
             if hops < best_hops or (hops == best_hops and dist < best_dist):
-                best_path, best_hops, best_dist = path, hops, dist
+                best_path, best_hops, best_dist, best_origin_iata = path, hops, dist, origin_iata
 
         if best_path is None:
             results.append({'city': a['city'], 'count': a['count'],
@@ -486,7 +492,8 @@ def get_routes_for_destination(attendees, dest_iata):
                 'airline': airline,
                 'airline_name': AIRLINES.get(airline, airline),
             })
-        oneway_price, oneway_carbon = estimate_fare(best_dist, best_hops)
+        oneway_price, oneway_carbon = estimate_fare(best_dist, best_hops,
+                                                    best_origin_iata, dest_iata)
         results.append({
             'city':             a['city'],
             'count':            a['count'],
@@ -515,6 +522,86 @@ def get_routes_for_destination(attendees, dest_iata):
 # A connection penalty is added per stop to reflect the reality that
 # itineraries with connections are rarely as cheap as direct flights suggest.
 #
+# Two additional adjustments are applied when origin/dest IATAs are known:
+#
+#   1. Region-pair multiplier — captures competitive dynamics between
+#      continent pairs (e.g. intra-Europe LCC market ~0.55×, thin
+#      intra-Africa routes ~1.25×).
+#
+#   2. Hub competition discount — routes between two major international
+#      hubs attract far more carriers than thin routes, so a 12% discount
+#      is applied when both endpoints are in the top-hub set.
+
+# Top ~50 globally connected hubs that attract significant carrier competition.
+_TOP_HUBS = frozenset({
+    # Europe
+    'LHR', 'LGW', 'CDG', 'AMS', 'FRA', 'MUC', 'MAD', 'BCN', 'FCO', 'MXP',
+    'ZRH', 'VIE', 'BRU', 'ARN', 'CPH', 'OSL', 'HEL', 'LIS', 'ATH', 'DUB',
+    # North America
+    'JFK', 'LAX', 'ORD', 'ATL', 'DFW', 'MIA', 'SFO', 'BOS', 'YYZ', 'EWR',
+    'IAD', 'SEA',
+    # Middle East (classified as Asia by get_continent)
+    'DXB', 'DOH', 'AUH', 'IST',
+    # Asia
+    'SIN', 'HKG', 'NRT', 'ICN', 'PEK', 'PVG', 'BKK', 'KUL', 'CGK', 'DEL', 'BOM',
+    # Oceania
+    'SYD', 'MEL',
+    # Africa
+    'JNB', 'NBO', 'CAI', 'CMN', 'ADD',
+    # South America
+    'GRU', 'EZE', 'BOG', 'LIM', 'SCL',
+})
+
+# Region-pair multipliers — keyed by frozenset so A→B == B→A.
+# Same-continent pairs use a single-element frozenset.
+_REGION_PAIR_MULTIPLIERS = {
+    frozenset({'Europe'}):                          0.55,  # LCC-dominated (Ryanair/EasyJet)
+    frozenset({'North America'}):                   0.70,  # cheap US/Canada domestic
+    frozenset({'Asia'}):                            0.85,  # SE Asia LCC market
+    frozenset({'Africa'}):                          1.25,  # thin routes, limited competition
+    frozenset({'South America'}):                   1.10,
+    frozenset({'Oceania'}):                         1.05,  # Pacific island routes
+    frozenset({'Europe',        'North America'}):  0.90,  # competitive transatlantic
+    frozenset({'Europe',        'Asia'}):           0.90,  # Gulf carriers + European airlines
+    frozenset({'Europe',        'Africa'}):         1.05,
+    frozenset({'Europe',        'South America'}):  1.00,
+    frozenset({'Europe',        'Oceania'}):        1.00,
+    frozenset({'North America', 'Asia'}):           0.95,
+    frozenset({'North America', 'South America'}):  1.10,
+    frozenset({'North America', 'Africa'}):         1.20,
+    frozenset({'North America', 'Oceania'}):        1.00,
+    frozenset({'Asia',          'Africa'}):         1.15,
+    frozenset({'Asia',          'South America'}):  1.20,
+    frozenset({'Asia',          'Oceania'}):        1.00,
+    frozenset({'Africa',        'South America'}):  1.30,
+    frozenset({'Africa',        'Oceania'}):        1.20,
+    frozenset({'South America', 'Oceania'}):        1.10,
+}
+
+
+def _route_price_factor(origin_iata, dest_iata):
+    """
+    Combined price adjustment factor for a specific city pair.
+
+    Multiplies the raw distance-band estimate by:
+      • a region-pair multiplier (competitive dynamics)
+      • a hub discount (0.88×) when both endpoints are major hubs
+    Returns 1.0 when either IATA is unknown.
+    """
+    if not origin_iata or not dest_iata:
+        return 1.0
+
+    o_cont = AIRPORTS.get(origin_iata, {}).get('continent', '')
+    d_cont = AIRPORTS.get(dest_iata,   {}).get('continent', '')
+
+    region_factor = _REGION_PAIR_MULTIPLIERS.get(frozenset({o_cont, d_cont}), 1.0) \
+                    if o_cont and d_cont else 1.0
+
+    hub_factor = 0.88 if (origin_iata in _TOP_HUBS and dest_iata in _TOP_HUBS) else 1.0
+
+    return region_factor * hub_factor
+
+
 def _carbon_factor(dist_km):
     """
     kg CO₂ per passenger-km for economy class, without radiative forcing index.
@@ -535,10 +622,13 @@ def _carbon_factor(dist_km):
         return 0.085   # Ultra long haul (very efficient widebody)
 
 
-def estimate_fare(total_dist_km, num_stops):
+def estimate_fare(total_dist_km, num_stops, origin_iata=None, dest_iata=None):
     """
     Estimate a one-way economy fare in USD based on total route distance
     and number of stops. Returns (price_usd, carbon_kg_oneway).
+
+    When origin_iata and dest_iata are supplied a region-pair multiplier
+    and hub-competition discount are applied to the base fare.
     """
     d = total_dist_km
 
@@ -565,7 +655,8 @@ def estimate_fare(total_dist_km, num_stops):
     # Connection penalty — each stop adds ~$60 (taxes, inconvenience premium)
     connection_penalty = num_stops * 60
 
-    one_way = round(base + connection_penalty)
+    price_factor = _route_price_factor(origin_iata, dest_iata)
+    one_way = round((base + connection_penalty) * price_factor)
     carbon  = round(d * _carbon_factor(d), 1)
 
     return one_way, carbon
@@ -675,7 +766,8 @@ def get_live_prices():
 
         if 'error' in price_data:
             # Fall back to estimate
-            oneway_price, oneway_carbon = estimate_fare(best_dist, best_hops)
+            oneway_price, oneway_carbon = estimate_fare(best_dist, best_hops,
+                                                        best_origin, dest_iata)
             price_per_person = oneway_price * 2
             carbon_per_person = round(oneway_carbon * 2, 1)
             source = 'estimate (SerpApi failed)'
@@ -688,7 +780,8 @@ def get_live_prices():
                 carbon_per_person = round((carbon_g * 2) / 1000, 1)
             else:
                 # SerpAPI returned no carbon data — fall back to distance estimate
-                _, oneway_carbon  = estimate_fare(best_dist, best_hops)
+                _, oneway_carbon  = estimate_fare(best_dist, best_hops,
+                                                  best_origin, dest_iata)
                 carbon_per_person = round(oneway_carbon * 2, 1)
             source = 'live'
 
