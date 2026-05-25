@@ -1048,18 +1048,15 @@ function editAttendeeCount(i) {
   input.select();
 
   const save = () => {
-    const val = Math.max(1, parseInt(input.value) || 1);
-    if (val !== attendees[i].count) {
-      attendees[i].count = val;
-      if (currentResults) {
-        currentResults = null;
-        resultsPanel.classList.remove('visible');
-        routeDetail.classList.remove('visible');
-        selectedIata = null; focusedIata = null; focusedRowEl = null;
-      }
-    }
+    const val     = Math.max(1, parseInt(input.value) || 1);
+    const changed = val !== attendees[i].count;
+    attendees[i].count = val;
     renderAttendees();
-    setTimeout(() => findBtn.focus(), 0);
+    if (changed && currentResults) {
+      findBtn.click();   // re-run search immediately with updated count
+    } else {
+      setTimeout(() => findBtn.focus(), 0);
+    }
   };
 
   input.addEventListener('blur', save);

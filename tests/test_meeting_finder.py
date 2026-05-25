@@ -643,9 +643,9 @@ class TestUIFeatures:
     def test_attendee_count_is_editable(self, html):
         assert "editAttendeeCount" in html
 
-    def test_editing_count_clears_results(self, html):
-        """Changing a count must invalidate existing results."""
-        assert "currentResults = null" in html
+    def test_editing_count_reruns_search(self, html):
+        """Changing a count while results are visible must immediately re-run the search."""
+        assert "findBtn.click()" in html
 
     # ── header redesign ───────────────────────────────────────────────────────
 
@@ -713,27 +713,39 @@ class TestAttendeeChip:
         assert "box-shadow" in block  # focus ring
         assert "green" in block or "rgba(22,163,74" in block or "var(--green" in block
 
-    def test_editing_count_clears_results_and_route_detail(self, html):
+    def test_editing_count_reruns_search_not_clears(self, html):
         """
-        Changing a count mid-session must reset currentResults, hide the
-        results panel, and hide the route detail — so stale results are
-        not shown alongside the new attendee configuration.
+        Changing a count mid-session must immediately re-run the search so
+        the results update in place — the old behaviour (clear + hide) has
+        been replaced with findBtn.click() inside the save() closure.
         """
-        assert "resultsPanel.classList.remove('visible')" in html
-        assert "routeDetail.classList.remove('visible')"  in html
+        import re
+        # Find the save() closure inside editAttendeeCount
+        match = re.search(
+            r'const save = \(\) => \{(.+?)^\s{2}\};',
+            html, re.DOTALL | re.MULTILINE,
+        )
+        assert match, "save() closure inside editAttendeeCount not found"
+        body = match.group(1)
+        assert "findBtn.click()" in body,    "save() must call findBtn.click() to re-run"
+        assert "currentResults = null" not in body, (
+            "save() must not manually clear results — findBtn.click() handles the reset"
+        )
 
     def test_escape_in_edit_cancels_without_saving(self, html):
         assert "e.key === 'Escape'" in html
         assert "renderAttendees()" in html
 
-    def test_enter_in_edit_saves_without_triggering_find(self, html):
+    def test_enter_in_edit_saves_and_reruns_or_focuses(self, html):
         """
-        Enter in the count input should commit the value and focus the find
-        button — but NOT immediately fire the find (user must press Enter
-        again deliberately).
+        Enter in the count input commits the value. If results are already
+        showing the search re-runs immediately (findBtn.click). If no results
+        exist yet, focus moves to the find button for a deliberate trigger.
         """
         assert "input.blur()" in html
-        assert "setTimeout(() => findBtn.focus(), 0)" in html
+        # Both branches must be present
+        assert "findBtn.click()"                   in html  # re-run path
+        assert "setTimeout(() => findBtn.focus()" in html   # no-results path
 
     def test_delete_buttons_not_in_tab_order(self, html):
         """Delete × buttons must have tabindex=-1 so Tab skips them."""
@@ -878,7 +890,13 @@ class TestMouseMoveClearsFocus:
         assert "classList.remove('focused')" in html
 
     def test_mousemove_clears_focused_iata(self, html):
-        assert "focusedIata = null" in html
+        import re
+        # Use regex so the test is insensitive to alignment whitespace
+        match = re.search(r"resultsPanel\.addEventListener\('mousemove'.*?\}\)", html, re.DOTALL)
+        assert match, "mousemove handler not found"
+        assert re.search(r"focusedIata\s*=\s*null", match.group()), (
+            "mousemove handler must reset focusedIata"
+        )
 
     def test_mousemove_clears_focused_row_el(self, html):
         assert "focusedRowEl = null" in html
