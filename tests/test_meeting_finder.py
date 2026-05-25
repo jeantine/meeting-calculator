@@ -1486,3 +1486,338 @@ class TestGetRoutesMissingData:
             json={},
         )
         assert res.status_code == 400
+
+
+# ─── 34. removeAttendee resets full navigation state ─────────────────────────
+
+class TestRemoveAttendeeResetsState:
+    """
+    removeAttendee() previously only cleared currentResults and hid panels,
+    but left selectedIata / focusedIata / focusedRowEl set. This caused a
+    silent failure: after deleting an attendee and re-running the search,
+    clicking the same destination again would hit the early-return guard
+    `if (selectedIata === iata) return` and the route detail would never open.
+    """
+
+    def test_remove_attendee_resets_selected_iata(self, html):
+        import re
+        match = re.search(r'function removeAttendee\([^)]*\)\s*\{([^}]+)\}', html, re.DOTALL)
+        assert match, "removeAttendee function not found"
+        body = match.group(1)
+        assert "selectedIata"  in body, "removeAttendee must reset selectedIata"
+
+    def test_remove_attendee_resets_focused_iata(self, html):
+        import re
+        match = re.search(r'function removeAttendee\([^)]*\)\s*\{([^}]+)\}', html, re.DOTALL)
+        body = match.group(1)
+        assert "focusedIata"   in body, "removeAttendee must reset focusedIata"
+
+    def test_remove_attendee_resets_focused_row_el(self, html):
+        import re
+        match = re.search(r'function removeAttendee\([^)]*\)\s*\{([^}]+)\}', html, re.DOTALL)
+        body = match.group(1)
+        assert "focusedRowEl"  in body, "removeAttendee must reset focusedRowEl"
+
+    def test_all_attendee_mutators_reset_same_state(self, html):
+        """
+        addAttendee, editAttendeeCount, and removeAttendee all change the
+        attendee list — every one of them must reset the full selection/focus
+        state so the UI is consistent regardless of how the list was changed.
+        """
+        import re
+        state_vars = ("selectedIata", "focusedIata", "focusedRowEl", "currentResults")
+        # Extract each function body — look for the function keyword to anchor correctly
+        remove_match = re.search(
+            r'function removeAttendee\([^)]*\)\s*\{([^}]+)\}', html, re.DOTALL)
+        add_match = re.search(
+            r'function addAttendee\([^)]*\)\s*\{(.+?)^}',
+            html, re.DOTALL | re.MULTILINE)
+        assert remove_match, "removeAttendee function not found"
+        assert add_match,    "addAttendee function not found"
+        for var in state_vars:
+            assert var in remove_match.group(1), (
+                f"removeAttendee missing reset of {var}"
+            )
+            assert var in add_match.group(1), (
+                f"addAttendee missing reset of {var}"
+            )
+
+
+# ─── 35. SerpAPI null carbon_emissions ───────────────────────────────────────
+
+class TestSerpApiNullCarbon:
+    """
+    Some Google Flights results include `"carbon_emissions": null` (the key
+    is present but the value is JSON null). The original code used:
+
+        best_flight.get("carbon_emissions", {}).get("this_flight")
+
+    which only substitutes {} when the key is *absent* — if the key exists
+    with value None, the second .get() raises AttributeError.
+
+    Fixed to:  (best_flight.get("carbon_emissions") or {}).get("this_flight")
+    """
+
+    def test_null_carbon_emissions_does_not_crash(self):
+        """carbon_emissions: null in the API response must not raise."""
+        response = {
+            "best_flights": [
+                {"price": 310, "carbon_emissions": None},
+            ]
+        }
+        with patch("urllib.request.urlopen", return_value=_mock_urlopen(response)):
+            result = serpapi_flight_price("VIE", "LHR", "2026-08-01", "2026-08-05")
+        # Should return the price; carbon_g will be None (no crash)
+        assert "error" not in result
+        assert result["price"] == 310
+        assert result["carbon_g"] is None
+
+    def test_missing_this_flight_key_returns_none_carbon(self):
+        """carbon_emissions present but missing the this_flight sub-key."""
+        response = {
+            "best_flights": [
+                {"price": 290, "carbon_emissions": {"typical_this_route": 80_000}},
+            ]
+        }
+        with patch("urllib.request.urlopen", return_value=_mock_urlopen(response)):
+            result = serpapi_flight_price("VIE", "LHR", "2026-08-01", "2026-08-05")
+        assert result["price"]    == 290
+        assert result["carbon_g"] is None   # graceful — no crash
+
+    def test_live_prices_falls_back_to_estimate_when_carbon_g_none(self, client):
+        """
+        When SerpAPI returns a price but no carbon data, the endpoint must
+        still produce a carbon estimate (from distance) rather than returning
+        None or crashing.
+        """
+        orig = app_module.SERPAPI_KEY
+        app_module.SERPAPI_KEY = "test-key"
+        try:
+            mock_price = {"price": 380, "carbon_g": None, "currency": "USD"}
+            with patch("app.serpapi_flight_price", return_value=mock_price):
+                res  = client.post("/api/get_live_prices", json={
+                    "attendees":   [{"city": "Vienna", "iatas": ["VIE"], "count": 1}],
+                    "dest_iata":   "LHR",
+                    "weeks_ahead": 8,
+                })
+                data = res.get_json()
+            assert res.status_code == 200
+            result = data["results"][0]
+            assert result["price_per_person"] == 380         # live price used
+            # carbon must be a positive number, not None
+            assert result["carbon_kg_person"] is not None
+            assert result["carbon_kg_person"] > 0
+        finally:
+            app_module.SERPAPI_KEY = orig
+
+
+# ─── 36. Continent filter — no matching destinations ─────────────────────────
+
+class TestContinentFilterNoResults:
+    """
+    If the continent filter excludes all candidate destinations the API must
+    return an empty overall list with a 200 OK — not a 500 or an error key.
+    """
+
+    def test_returns_200_with_empty_list_for_impossible_filter(self, client):
+        """
+        Attendees in Europe + continent_filter='Antarctica' — no Antarctic
+        hub airports exist so overall must be empty.
+        """
+        payload = {
+            "attendees": [
+                {"city": "London", "iatas": ["LHR"], "count": 1},
+                {"city": "Paris",  "iatas": ["CDG"], "count": 1},
+            ],
+            "continent_filter": "Antarctica",
+        }
+        res  = client.post("/api/find_destinations", json=payload)
+        data = res.get_json()
+        assert res.status_code == 200
+        assert data["overall"] == []
+
+    def test_overall_key_always_present_in_response(self, client):
+        payload = {
+            "attendees": [
+                {"city": "London", "iatas": ["LHR"], "count": 1},
+                {"city": "Vienna", "iatas": ["VIE"], "count": 1},
+            ],
+            "continent_filter": "Antarctica",
+        }
+        res  = client.post("/api/find_destinations", json=payload)
+        data = res.get_json()
+        assert "overall" in data
+        assert "home"    in data
+
+
+# ─── 37. /api/get_routes with unknown destination ────────────────────────────
+
+class TestGetRoutesUnknownDest:
+    """
+    If dest_iata doesn't exist in the route graph, get_routes_for_destination
+    returns an error entry per attendee rather than raising a 500.
+    """
+
+    def test_unknown_dest_returns_200_with_error_entry(self, client):
+        res = client.post("/api/get_routes", json={
+            "attendees": [{"city": "Vienna", "iatas": ["VIE"], "count": 1}],
+            "dest_iata": "ZZZ",
+        })
+        assert res.status_code == 200
+        route = res.get_json()["routes"][0]
+        assert "error" in route
+        assert route["legs"] == []
+
+    def test_unknown_dest_error_message_is_informative(self, client):
+        res = client.post("/api/get_routes", json={
+            "attendees": [{"city": "London", "iatas": ["LHR"], "count": 2}],
+            "dest_iata": "ZZZ",
+        })
+        route = res.get_json()["routes"][0]
+        assert route["error"]  # non-empty string
+
+
+# ─── 38. weeks_ahead produces a future outbound date ─────────────────────────
+
+class TestWeeksAheadDateCalculation:
+    """
+    The weeks_ahead parameter must shift the outbound date forward from today.
+    A miscalculation (e.g., using days instead of weeks) would produce a past
+    date and SerpAPI would return no results.
+    """
+
+    def test_outbound_date_is_in_the_future(self, client):
+        from datetime import date
+        orig = app_module.SERPAPI_KEY
+        app_module.SERPAPI_KEY = "test-key"
+        captured = {}
+        def fake_serpapi(origin, dest, outbound_date, return_date):
+            captured["outbound"] = outbound_date
+            captured["return"]   = return_date
+            return {"price": 300, "carbon_g": 90_000, "currency": "USD"}
+        try:
+            with patch("app.serpapi_flight_price", side_effect=fake_serpapi):
+                client.post("/api/get_live_prices", json={
+                    "attendees":   [{"city": "Vienna", "iatas": ["VIE"], "count": 1}],
+                    "dest_iata":   "LHR",
+                    "weeks_ahead": 4,
+                })
+        finally:
+            app_module.SERPAPI_KEY = orig
+        assert captured, "serpapi_flight_price was not called"
+        outbound = date.fromisoformat(captured["outbound"])
+        assert outbound > date.today(), (
+            f"Outbound date {outbound} is not in the future"
+        )
+
+    def test_return_date_is_after_outbound(self, client):
+        from datetime import date
+        orig = app_module.SERPAPI_KEY
+        app_module.SERPAPI_KEY = "test-key"
+        captured = {}
+        def fake_serpapi(origin, dest, outbound_date, return_date):
+            captured["outbound"] = outbound_date
+            captured["return"]   = return_date
+            return {"price": 300, "currency": "USD"}
+        try:
+            with patch("app.serpapi_flight_price", side_effect=fake_serpapi):
+                client.post("/api/get_live_prices", json={
+                    "attendees":   [{"city": "Vienna", "iatas": ["VIE"], "count": 1}],
+                    "dest_iata":   "LHR",
+                    "weeks_ahead": 8,
+                })
+        finally:
+            app_module.SERPAPI_KEY = orig
+        assert date.fromisoformat(captured["return"]) > date.fromisoformat(captured["outbound"])
+
+    def test_weeks_ahead_shifts_date_by_correct_number_of_weeks(self, client):
+        from datetime import date, timedelta
+        orig = app_module.SERPAPI_KEY
+        app_module.SERPAPI_KEY = "test-key"
+        captured = {}
+        def fake_serpapi(origin, dest, outbound_date, return_date):
+            captured["outbound"] = outbound_date
+            return {"price": 300, "currency": "USD"}
+        try:
+            with patch("app.serpapi_flight_price", side_effect=fake_serpapi):
+                client.post("/api/get_live_prices", json={
+                    "attendees":   [{"city": "Vienna", "iatas": ["VIE"], "count": 1}],
+                    "dest_iata":   "LHR",
+                    "weeks_ahead": 6,
+                })
+        finally:
+            app_module.SERPAPI_KEY = orig
+        expected = date.today() + timedelta(weeks=6)
+        assert date.fromisoformat(captured["outbound"]) == expected
+
+
+# ─── 39. addAttendee clears stale results ────────────────────────────────────
+
+class TestAddAttendeeClearsResults:
+    """
+    Adding a new attendee while results are visible must clear them — the
+    existing attendee configuration has changed so old results are stale.
+    """
+
+    def test_add_attendee_clears_current_results_when_set(self, html):
+        import re
+        match = re.search(r'function addAttendee\([^)]*\)\s*\{(.+?)^}',
+                          html, re.DOTALL | re.MULTILINE)
+        assert match, "addAttendee function not found"
+        body = match.group(1)
+        assert "currentResults = null"                    in body
+        assert "resultsPanel.classList.remove('visible')" in body
+        assert "routeDetail.classList.remove('visible')"  in body
+
+    def test_add_attendee_resets_selected_iata(self, html):
+        import re
+        match = re.search(r'function addAttendee\([^)]*\)\s*\{(.+?)^}',
+                          html, re.DOTALL | re.MULTILINE)
+        body = match.group(1)
+        assert "selectedIata" in body, (
+            "addAttendee must reset selectedIata to avoid the early-return "
+            "guard in selectDest locking out the same destination after re-search"
+        )
+
+    def test_add_attendee_clears_results_only_when_present(self, html):
+        """
+        The clear is guarded by `if (currentResults)` — it must not
+        unconditionally clear (which would remove a freshly-loaded result set
+        if two attendees happened to be added back-to-back quickly).
+        Wait — actually unconditional is fine too; the guard is just an
+        optimisation. Check the guard is present as documented.
+        """
+        assert "if (currentResults)" in html
+
+
+# ─── 40. estimate_fare edge cases ────────────────────────────────────────────
+
+class TestEstimateFareEdgeCases:
+    """Boundary and degenerate inputs that must not raise."""
+
+    def test_zero_distance_returns_positive_price(self):
+        """
+        home-city attendees are short-circuited before fare estimation, but
+        if estimate_fare(0, ...) were ever called it must not crash or
+        return a negative price.
+        """
+        price, carbon = estimate_fare(0, 0)
+        assert price  >= 0
+        assert carbon >= 0
+
+    def test_very_large_distance_uses_ultra_long_haul_band(self):
+        """Distances beyond 12 000 km (e.g. LHR→AKL ~18 300 km) must work."""
+        price, carbon = estimate_fare(18_000, 1)
+        assert price  > 0
+        assert carbon > 0
+
+    def test_multi_stop_zero_distance_does_not_crash(self):
+        price, _ = estimate_fare(0, 3)
+        assert price >= 0
+
+    def test_single_stop_penalty_applied(self):
+        direct,    _ = estimate_fare(2000, 0)
+        one_stop,  _ = estimate_fare(2000, 1)
+        two_stops, _ = estimate_fare(2000, 2)
+        assert one_stop  == direct   + 60
+        assert two_stops == one_stop + 60

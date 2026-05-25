@@ -1016,6 +1016,8 @@ function addAttendee() {
     resultsPanel.classList.remove('visible');
     routeDetail.classList.remove('visible');
     selectedIata = null;
+    focusedIata  = null;
+    focusedRowEl = null;
   }
 }
 
@@ -1072,6 +1074,9 @@ function removeAttendee(i) {
   currentResults = null;
   resultsPanel.classList.remove('visible');
   routeDetail.classList.remove('visible');
+  selectedIata  = null;
+  focusedIata   = null;
+  focusedRowEl  = null;
   renderAttendees();
 }
 

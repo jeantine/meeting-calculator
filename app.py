@@ -682,9 +682,14 @@ def get_live_prices():
             log.warning("SerpApi failed for %s->%s, using estimate: %s",
                         best_origin, dest_iata, price_data['error'])
         else:
-            price_per_person  = price_data['price']
-            carbon_g          = price_data.get('carbon_g')
-            carbon_per_person = round((carbon_g * 2) / 1000, 1) if carbon_g else None
+            price_per_person = price_data['price']
+            carbon_g         = price_data.get('carbon_g')
+            if carbon_g:
+                carbon_per_person = round((carbon_g * 2) / 1000, 1)
+            else:
+                # SerpAPI returned no carbon data — fall back to distance estimate
+                _, oneway_carbon  = estimate_fare(best_dist, best_hops)
+                carbon_per_person = round(oneway_carbon * 2, 1)
             source = 'live'
 
         group_total  = price_per_person * a['count']
@@ -761,7 +766,7 @@ def serpapi_flight_price(origin_iata, dest_iata, outbound_date, return_date):
         return {"error": "No prices found"}
 
     if best_flight:
-        raw_co2 = best_flight.get("carbon_emissions", {}).get("this_flight")
+        raw_co2 = (best_flight.get("carbon_emissions") or {}).get("this_flight")
         if raw_co2:
             try: carbon_g = int(raw_co2)
             except (ValueError, TypeError): pass
