@@ -77,6 +77,7 @@ from app import (
 @pytest.fixture(scope="module")
 def client():
     flask_app.config["TESTING"] = True
+    flask_app.config["RATELIMIT_ENABLED"] = False
     with flask_app.test_client() as c:
         yield c
 
@@ -450,9 +451,100 @@ class TestGetLivePricesEndpoint:
             app_module.SERPAPI_KEY = orig
 
 
-# ─── 8. SerpAPI response parser ───────────────────────────────────────────────
+# ─── 8. Security hardening ───────────────────────────────────────────────────
 
-class TestSerpApiParser:
+class TestSecurityHardening:
+    """Covers the fixes applied after the security audit."""
+
+    # ── rate-limit cap on attendees ───────────────────────────────────────────
+
+    def test_find_destinations_rejects_more_than_20_attendees(self, client):
+        attendees = [{"city": "London", "iatas": ["LHR"], "count": 1}] * 21
+        res = client.post("/api/find_destinations", json={"attendees": attendees})
+        assert res.status_code == 400
+        assert "20" in res.get_json().get("error", "")
+
+    # ── weeks_ahead validation ────────────────────────────────────────────────
+
+    def test_weeks_ahead_non_integer_returns_400(self, client):
+        orig = app_module.SERPAPI_KEY
+        app_module.SERPAPI_KEY = "test-key"
+        try:
+            res = client.post("/api/get_live_prices", json={
+                "attendees": [{"city": "Vienna", "iatas": ["VIE"], "count": 1}],
+                "dest_iata": "LHR",
+                "weeks_ahead": "not-a-number",
+            })
+        finally:
+            app_module.SERPAPI_KEY = orig
+        assert res.status_code == 400
+
+    def test_weeks_ahead_too_large_returns_400(self, client):
+        orig = app_module.SERPAPI_KEY
+        app_module.SERPAPI_KEY = "test-key"
+        try:
+            res = client.post("/api/get_live_prices", json={
+                "attendees": [{"city": "Vienna", "iatas": ["VIE"], "count": 1}],
+                "dest_iata": "LHR",
+                "weeks_ahead": 999999,
+            })
+        finally:
+            app_module.SERPAPI_KEY = orig
+        assert res.status_code == 400
+
+    def test_weeks_ahead_zero_returns_400(self, client):
+        orig = app_module.SERPAPI_KEY
+        app_module.SERPAPI_KEY = "test-key"
+        try:
+            res = client.post("/api/get_live_prices", json={
+                "attendees": [{"city": "Vienna", "iatas": ["VIE"], "count": 1}],
+                "dest_iata": "LHR",
+                "weeks_ahead": 0,
+            })
+        finally:
+            app_module.SERPAPI_KEY = orig
+        assert res.status_code == 400
+
+    # ── security response headers ─────────────────────────────────────────────
+
+    def test_x_content_type_options_header(self, client):
+        res = client.get("/")
+        assert res.headers.get("X-Content-Type-Options") == "nosniff"
+
+    def test_x_frame_options_header(self, client):
+        res = client.get("/")
+        assert res.headers.get("X-Frame-Options") == "DENY"
+
+    def test_referrer_policy_header(self, client):
+        res = client.get("/")
+        assert res.headers.get("Referrer-Policy") == "strict-origin-when-cross-origin"
+
+    def test_content_security_policy_header_present(self, client):
+        res = client.get("/")
+        assert "Content-Security-Policy" in res.headers
+
+    # ── SerpAPI error body not leaked ─────────────────────────────────────────
+
+    def test_serpapi_http_error_response_excludes_body(self):
+        """HTTP error returned from serpapi_flight_price must not include the body."""
+        import urllib.error, urllib.response, io
+        mock_err = urllib.error.HTTPError(
+            url="https://serpapi.com/search",
+            code=401,
+            msg="Unauthorized",
+            hdrs={},
+            fp=io.BytesIO(b'{"error":"Your API key sk-secret is invalid"}'),
+        )
+        with patch("urllib.request.urlopen", side_effect=mock_err):
+            result = serpapi_flight_price("LHR", "JFK", "2026-06-01", "2026-06-06")
+        assert "error" in result
+        assert "sk-secret" not in result["error"]
+        assert "invalid" not in result["error"].lower()
+
+
+# ─── 9. SerpAPI response parser ───────────────────────────────────────────────
+
+class TestSerpApiParser:  # was section 8, renumbered to 9 after security section inserted
 
     def test_picks_lowest_price_from_best_flights(self):
         response = {

@@ -13,6 +13,9 @@ import urllib.error
 import json
 from collections import defaultdict
 from flask import Flask, jsonify, request, send_from_directory
+from flask_cors import CORS
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 # Set up logging — output goes to the terminal running app.py
 logging.basicConfig(
@@ -667,6 +670,37 @@ def estimate_fare(total_dist_km, num_stops, origin_iata=None, dest_iata=None):
 # ---------------------------------------------------------------------------
 app = Flask(__name__, static_folder=_HERE)
 
+# CORS — restrict to your deployed origin in production via the ALLOWED_ORIGIN
+# environment variable (defaults to * for local development).
+ALLOWED_ORIGIN = os.environ.get('ALLOWED_ORIGIN', '*')
+CORS(app, resources={r"/api/*": {"origins": ALLOWED_ORIGIN}})
+
+# Rate limiting — disabled automatically when app.config["TESTING"] is True.
+# Uses in-memory storage (sufficient for a single-worker deployment).
+limiter = Limiter(
+    key_func=get_remote_address,
+    app=app,
+    storage_uri="memory://",
+    enabled=True,
+)
+
+# Security response headers
+@app.after_request
+def add_security_headers(resp):
+    resp.headers['X-Content-Type-Options']  = 'nosniff'
+    resp.headers['X-Frame-Options']         = 'DENY'
+    resp.headers['Referrer-Policy']         = 'strict-origin-when-cross-origin'
+    resp.headers['Content-Security-Policy'] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src https://fonts.gstatic.com; "
+        "img-src 'self' data:; "
+        "connect-src 'self';"
+    )
+    return resp
+
+
 @app.route('/')
 def index():
     return send_from_directory(_HERE, 'index.html')
@@ -687,12 +721,15 @@ def search_city():
     return jsonify(find_airports_by_city(q))
 
 @app.route('/api/find_destinations', methods=['POST'])
+@limiter.limit("20/minute")
 def find_destinations():
     data              = request.json
     attendees         = data.get('attendees', [])
     continent_filter  = data.get('continent_filter', None)
     if len(attendees) < 2:
         return jsonify({'error': 'Please add at least 2 attendees.'}), 400
+    if len(attendees) > 20:
+        return jsonify({'error': 'Maximum 20 attendees supported.'}), 400
     log.info("find_destinations: %d attendees, continent_filter=%s",
              len(attendees), continent_filter)
     ranked, ranked_home = find_meeting_destinations(
@@ -701,6 +738,7 @@ def find_destinations():
                     'continent_filter': continent_filter})
 
 @app.route('/api/get_routes', methods=['POST'])
+@limiter.limit("60/minute")
 def get_routes():
     data      = request.json
     attendees = data.get('attendees', [])
@@ -712,6 +750,7 @@ def get_routes():
     return jsonify({'dest': dest_info, 'dest_iata': dest_iata, 'routes': routes})
 
 @app.route('/api/get_live_prices', methods=['POST'])
+@limiter.limit("20/minute")
 def get_live_prices():
     """
     Fetch real-time return fares from SerpApi Google Flights.
@@ -720,7 +759,12 @@ def get_live_prices():
     data        = request.json
     attendees   = data.get('attendees', [])
     dest_iata   = data.get('dest_iata', '')
-    weeks_ahead = int(data.get('weeks_ahead', 8))
+    try:
+        weeks_ahead = int(data.get('weeks_ahead', 8))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'weeks_ahead must be an integer.'}), 400
+    if not 1 <= weeks_ahead <= 52:
+        return jsonify({'error': 'weeks_ahead must be between 1 and 52.'}), 400
 
     if not dest_iata or not attendees:
         return jsonify({'error': 'Missing data.'}), 400
@@ -829,9 +873,9 @@ def serpapi_flight_price(origin_iata, dest_iata, outbound_date, return_date):
         with urllib.request.urlopen(url, timeout=15) as resp:
             data = json.loads(resp.read().decode())
     except urllib.error.HTTPError as e:
-        body = e.read().decode(errors="replace")
-        log.error("SerpApi HTTP %s: %s", e.code, body[:200])
-        return {"error": f"HTTP {e.code}: {body[:200]}"}
+        e.read()  # drain body — never logged to avoid leaking key from error responses
+        log.error("SerpApi HTTP %s for %s->%s", e.code, origin_iata, dest_iata)
+        return {"error": f"HTTP {e.code}"}
     except Exception as e:
         log.error("SerpApi error: %s", e)
         return {"error": str(e)}

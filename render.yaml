@@ -3,7 +3,7 @@ services:
     name: meeting-calculator
     runtime: python
     buildCommand: pip install -r requirements.txt
-    startCommand: python app.py
+    startCommand: gunicorn app:app --workers 2 --timeout 60
     envVars:
       - key: SERPAPI_KEY
         sync: false        # set manually in Render dashboard — never committed
