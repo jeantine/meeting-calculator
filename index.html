@@ -1356,7 +1356,7 @@ document.getElementById('getLiveBtn').addEventListener('click', async () => {
 
   btn.disabled = true;
   btn.textContent = 'Fetching live prices…';
-  priceDiv.innerHTML = '<div class="price-row"><span class="price-city" style="color:var(--mid)">Searching Google Flights via SerpApi…</span></div>';
+  priceDiv.innerHTML = '<div class="price-row"><span class="price-city" style="color:var(--mid)">Searching Google Flights…</span></div>';
 
   const res  = await fetch('/api/get_live_prices', {
     method: 'POST',
