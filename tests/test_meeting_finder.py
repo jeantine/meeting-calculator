@@ -23,7 +23,8 @@ Tests covering all corrections made to the Meeting Calculator app:
   18. HTML: Price toolbar scrolls into view when route is selected
   19. HTML: Continent filter re-runs search when results are already shown
   20. HTML: Home attendees shown with local count in their own column
-  21. HTML: Bare $ bug fixed — live prices per-person amount uses US$
+  21. HTML: Percentage-above-lowest tags on cost and carbon columns
+  22. HTML: Bare $ bug fixed — live prices per-person amount uses US$
   22. Round-trip pricing correctness (est_price_person = oneway × 2, group scales with count)
   23. haversine distance accuracy
   24. find_best_route — fewest hops preferred, unreachable returns None
@@ -988,7 +989,58 @@ class TestHomeAttendeesColumn:
             assert row["local_count"] > 0
 
 
-# ─── 21. HTML: Bare $ bug — live prices per-person ────────────────────────────
+# ─── 21. HTML: Percentage-above-lowest tags ──────────────────────────────────
+
+class TestPctTags:
+    """
+    Each cost and carbon cell in the destination table should show a small
+    badge indicating how far above the lowest value in the result set the
+    row is — mirroring the Google Flights carbon annotation pattern.
+    """
+
+    def test_pct_tag_css_class_exists(self, html):
+        assert ".pct-tag" in html
+
+    def test_pct_lowest_css_class_exists(self, html):
+        assert ".pct-lowest" in html
+
+    def test_pct_above_css_class_exists(self, html):
+        assert ".pct-above" in html
+
+    def test_pct_tag_helper_function_exists(self, html):
+        assert "function pctTag" in html
+
+    def test_pct_tag_shows_lowest_for_minimum(self, html):
+        # The pctTag function must return the "Lowest" label when val <= min
+        assert "pct-lowest" in html
+        assert "Lowest" in html
+
+    def test_pct_tag_shows_percentage_for_above_minimum(self, html):
+        # The pctTag function must compute a rounded percentage
+        assert "Math.round" in html
+        assert "pct-above" in html
+
+    def test_pct_tag_called_for_cost_column(self, html):
+        # pctTag must be applied to est_cost in both row templates
+        assert html.count("pctTag(d.est_cost") >= 2   # overall + home table
+
+    def test_pct_tag_called_for_carbon_column(self, html):
+        # pctTag must be applied to est_carbon in both row templates
+        assert html.count("pctTag(d.est_carbon") >= 2
+
+    def test_min_of_helper_exists(self, html):
+        assert "function minOf" in html
+
+    def test_minimums_computed_for_overall_table(self, html):
+        assert "minOverallCost" in html
+        assert "minOverallCarbon" in html
+
+    def test_minimums_computed_for_home_table(self, html):
+        assert "minHomeCost" in html
+        assert "minHomeCarbon" in html
+
+
+# ─── 22. HTML: Bare $ bug — live prices per-person ────────────────────────────
 
 class TestLivePricesPerPersonUSD:
     """

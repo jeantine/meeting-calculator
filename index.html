@@ -420,6 +420,17 @@
     white-space: nowrap;
   }
 
+  /* ── Percentage-above-lowest tags (cost & carbon columns) ── */
+  .pct-tag {
+    display: block;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.67rem;
+    font-weight: 500;
+    margin-top: 3px;
+  }
+  .pct-lowest { color: var(--green); }
+  .pct-above  { color: var(--muted); }
+
   /* ── Route detail ── */
   .route-detail {
     margin-top: 1.5rem;
@@ -1162,8 +1173,22 @@ resultsPanel.addEventListener('mousemove', () => {
 // ── Render tables ──
 function fmt(km) { return km.toLocaleString() + ' km'; }
 
+/** Return a "Lowest" or "+X%" badge relative to min, or '' when val === min. */
+function pctTag(val, min) {
+  if (val == null || min == null) return '';
+  if (val <= min) return '<span class="pct-tag pct-lowest">Lowest</span>';
+  const pct = Math.round((val - min) / min * 100);
+  return `<span class="pct-tag pct-above">+${pct}%</span>`;
+}
+
+function minOf(rows, key) {
+  const vals = rows.map(d => d[key]).filter(v => v != null);
+  return vals.length ? Math.min(...vals) : null;
+}
+
 function renderTables(data) {
-  const totalAttendees = attendees.reduce((s, a) => s + a.count, 0);
+  const minOverallCost   = minOf(data.overall, 'est_cost');
+  const minOverallCarbon = minOf(data.overall, 'est_carbon');
 
   overallBody.innerHTML = data.overall.map((d, i) => `
     <tr data-iata="${d.iata}" onclick="selectDest('${d.iata}', this)">
@@ -1175,13 +1200,16 @@ function renderTables(data) {
         <div class="airport-name">${d.iata} · ${d.name}</div>
       </td>
       <td class="r">${d.avg_hops}</td>
-      <td class="r em">${d.est_cost != null ? 'US$' + d.est_cost.toLocaleString() : '—'}</td>
-      <td class="r em">${d.est_carbon != null ? d.est_carbon.toLocaleString() + ' kg' : '—'}</td>
+      <td class="r em">${d.est_cost != null ? 'US$' + d.est_cost.toLocaleString() : '—'}${pctTag(d.est_cost, minOverallCost)}</td>
+      <td class="r em">${d.est_carbon != null ? d.est_carbon.toLocaleString() + ' kg' : '—'}${pctTag(d.est_carbon, minOverallCarbon)}</td>
       <td class="r">${fmt(d.total_dist)}</td>
       <td class="r">${fmt(d.avg_dist)}</td>
       <td class="routes-hint-cell"><span class="routes-pill">View routes →</span></td>
     </tr>
   `).join('');
+
+  const minHomeCost   = minOf(data.home, 'est_cost');
+  const minHomeCarbon = minOf(data.home, 'est_carbon');
 
   homeBody.innerHTML = data.home.map((d, i) => `
     <tr data-iata="${d.iata}" onclick="selectDest('${d.iata}', this)">
@@ -1191,8 +1219,8 @@ function renderTables(data) {
         <div class="airport-name">${d.iata} · ${d.name}</div>
       </td>
       <td class="r">${d.avg_hops}</td>
-      <td class="r em">${d.est_cost != null ? 'US$' + d.est_cost.toLocaleString() : '—'}</td>
-      <td class="r em">${d.est_carbon != null ? d.est_carbon.toLocaleString() + ' kg' : '—'}</td>
+      <td class="r em">${d.est_cost != null ? 'US$' + d.est_cost.toLocaleString() : '—'}${pctTag(d.est_cost, minHomeCost)}</td>
+      <td class="r em">${d.est_carbon != null ? d.est_carbon.toLocaleString() + ' kg' : '—'}${pctTag(d.est_carbon, minHomeCarbon)}</td>
       <td class="r">${fmt(d.total_dist)}</td>
       <td class="r">${fmt(d.avg_dist)}</td>
       <td class="r">${d.local_count} local</td>
