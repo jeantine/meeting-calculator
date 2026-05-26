@@ -1860,6 +1860,27 @@ class TestWeeksAheadDateCalculation:
             app_module.SERPAPI_KEY = orig
         assert date.fromisoformat(captured["return"]) > date.fromisoformat(captured["outbound"])
 
+    def test_trip_duration_is_five_days(self, client):
+        from datetime import date, timedelta
+        orig = app_module.SERPAPI_KEY
+        app_module.SERPAPI_KEY = "test-key"
+        captured = {}
+        def fake_serpapi(origin, dest, outbound_date, return_date):
+            captured["outbound"] = outbound_date
+            captured["return"]   = return_date
+            return {"price": 300, "currency": "USD"}
+        try:
+            with patch("app.serpapi_flight_price", side_effect=fake_serpapi):
+                client.post("/api/get_live_prices", json={
+                    "attendees":   [{"city": "Vienna", "iatas": ["VIE"], "count": 1}],
+                    "dest_iata":   "LHR",
+                    "weeks_ahead": 8,
+                })
+        finally:
+            app_module.SERPAPI_KEY = orig
+        gap = date.fromisoformat(captured["return"]) - date.fromisoformat(captured["outbound"])
+        assert gap.days == 5, f"Expected 5-day trip, got {gap.days} days"
+
     def test_weeks_ahead_shifts_date_by_correct_number_of_weeks(self, client):
         from datetime import date, timedelta
         orig = app_module.SERPAPI_KEY
