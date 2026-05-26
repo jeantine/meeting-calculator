@@ -231,29 +231,63 @@ estimate_rail_fare(dist_km, num_transfers)
 
 Each rail interchange adds **$15** (transfer penalty). This is much lower than the $60 air-connection penalty because rail interchanges typically involve no re-checking or security.
 
-### Rail network (Phase 1)
+### Rail network
 
-The following 21 city stations and 34 bidirectional connections are included:
+The following **71 city stations** and **141 bidirectional connections** are included, covering the full Interrail map across the UK and Europe.
 
-**Stations:** London, Paris, Brussels, Amsterdam, Frankfurt, Berlin, Munich, Hamburg, Zurich, Geneva, Madrid, Barcelona, Rome, Milan, Vienna, Prague, Budapest, Warsaw, Stockholm, Copenhagen, Oslo
+#### Stations by region
 
-**Key connections and operators:**
+| Region | Stations |
+|--------|---------|
+| **UK** | London, Edinburgh, Glasgow, Manchester, Birmingham, Bristol |
+| **France** | Paris, Lyon, Marseille, Nice, Bordeaux, Toulouse, Strasbourg, Nantes |
+| **Benelux** | Brussels, Amsterdam, Rotterdam |
+| **Germany** | Frankfurt, Berlin, Munich, Hamburg, Cologne, Düsseldorf, Stuttgart, Nuremberg, Hannover |
+| **Switzerland** | Zurich, Geneva, Basel, Bern |
+| **Austria** | Vienna, Salzburg, Graz |
+| **Italy** | Milan, Rome, Florence, Bologna, Venice, Turin, Naples |
+| **Iberia** | Madrid, Barcelona, Seville, Valencia, Málaga, Lisbon, Porto |
+| **Central Europe** | Prague, Brno, Bratislava, Budapest, Warsaw, Kraków, Wrocław, Gdańsk |
+| **SE Europe** | Belgrade, Zagreb, Ljubljana, Sofia, Bucharest, Thessaloniki, Athens, Istanbul |
+| **Scandinavia** | Stockholm, Copenhagen, Oslo, Gothenburg, Malmö |
+| **Baltics** | Tallinn, Riga, Vilnius |
+
+#### Key connections and operators
 
 | Route | Distance | Operator |
 |-------|----------|----------|
 | London ↔ Paris | 493 km | Eurostar |
 | London ↔ Brussels | 370 km | Eurostar |
+| London ↔ Edinburgh | 630 km | LNER |
+| London ↔ Glasgow | 645 km | Avanti West Coast |
+| London ↔ Manchester | 295 km | Avanti West Coast |
 | Paris ↔ Amsterdam | 503 km | Thalys |
 | Paris ↔ Frankfurt | 579 km | TGV/ICE |
+| Paris ↔ Lyon | 465 km | TGV |
 | Paris ↔ Barcelona | 1 040 km | TGV/AVE |
+| Paris ↔ Milan | 693 km | TGV/Frecciarossa |
+| Paris ↔ Zurich | 601 km | TGV |
+| Brussels ↔ Amsterdam | 192 km | Thalys |
 | Frankfurt ↔ Berlin | 557 km | ICE |
 | Frankfurt ↔ Munich | 302 km | ICE |
+| Frankfurt ↔ Vienna | 744 km | ICE |
+| Frankfurt ↔ Zurich | 368 km | ICE |
 | Munich ↔ Vienna | 379 km | Railjet |
+| Munich ↔ Milan | 514 km | ICE/EC |
 | Vienna ↔ Budapest | 243 km | Railjet |
 | Vienna ↔ Prague | 323 km | Railjet |
+| Vienna ↔ Bratislava | 65 km | Railjet/EC |
+| Vienna ↔ Ljubljana | 400 km | EC |
 | Berlin ↔ Warsaw | 573 km | ICE |
-| Copenhagen ↔ Stockholm | 613 km | SJ/DSB |
+| Berlin ↔ Prague | 353 km | EC |
 | Milan ↔ Rome | 572 km | Frecciarossa |
+| Rome ↔ Naples | 220 km | Frecciarossa |
+| Madrid ↔ Seville | 470 km | AVE |
+| Madrid ↔ Barcelona | 620 km | AVE |
+| Copenhagen ↔ Stockholm | 613 km | SJ/DSB |
+| Sofia ↔ Istanbul | 560 km | EC |
+| Tallinn ↔ Riga | 310 km | IC |
+| Riga ↔ Vilnius | 295 km | IC |
 
 For the full list see `_RAIL_EDGES` in `app.py`.
 

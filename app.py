@@ -192,73 +192,180 @@ RAIL_CARBON_FACTOR = 0.006   # kg CO₂/pax-km for European high-speed rail
                               # (IEA/EEA figure for electrified HSR, no RFI)
 
 RAIL_STATIONS = {
-    'GBLON': {'name': 'London St Pancras',   'city': 'London',     'country': 'United Kingdom'},
-    'FRPAR': {'name': 'Paris Gare du Nord',  'city': 'Paris',      'country': 'France'},
-    'BEBRU': {'name': 'Brussels-Midi',       'city': 'Brussels',   'country': 'Belgium'},
-    'NLAMS': {'name': 'Amsterdam Centraal',  'city': 'Amsterdam',  'country': 'Netherlands'},
-    'DEFRA': {'name': 'Frankfurt Hbf',       'city': 'Frankfurt',  'country': 'Germany'},
-    'DEBER': {'name': 'Berlin Hbf',          'city': 'Berlin',     'country': 'Germany'},
-    'DEMUC': {'name': 'Munich Hbf',          'city': 'Munich',     'country': 'Germany'},
-    'DEHAM': {'name': 'Hamburg Hbf',         'city': 'Hamburg',    'country': 'Germany'},
-    'CHZRH': {'name': 'Zurich Hbf',          'city': 'Zurich',     'country': 'Switzerland'},
-    'CHGVA': {'name': 'Geneva Cornavin',     'city': 'Geneva',     'country': 'Switzerland'},
-    'ESMAD': {'name': 'Madrid Atocha',       'city': 'Madrid',     'country': 'Spain'},
-    'ESBCN': {'name': 'Barcelona Sants',     'city': 'Barcelona',  'country': 'Spain'},
-    'ITROM': {'name': 'Rome Termini',        'city': 'Rome',       'country': 'Italy'},
-    'ITMIL': {'name': 'Milan Centrale',      'city': 'Milan',      'country': 'Italy'},
-    'ATVIE': {'name': 'Vienna Hbf',          'city': 'Vienna',     'country': 'Austria'},
-    'CZPRG': {'name': 'Prague hl.n.',        'city': 'Prague',     'country': 'Czech Republic'},
-    'HUBUD': {'name': 'Budapest Keleti',     'city': 'Budapest',   'country': 'Hungary'},
-    'PLWAW': {'name': 'Warsaw Centralna',    'city': 'Warsaw',     'country': 'Poland'},
-    'SESTO': {'name': 'Stockholm Centralen','city': 'Stockholm',  'country': 'Sweden'},
-    'DKCPH': {'name': 'Copenhagen H',        'city': 'Copenhagen', 'country': 'Denmark'},
-    'NOOSL': {'name': 'Oslo S',              'city': 'Oslo',       'country': 'Norway'},
+    # ── United Kingdom ──────────────────────────────────────────────────────
+    'GBLON': {'name': 'London St Pancras',    'city': 'London',       'country': 'United Kingdom'},
+    'GBEDB': {'name': 'Edinburgh Waverley',   'city': 'Edinburgh',    'country': 'United Kingdom'},
+    'GBGLA': {'name': 'Glasgow Central',      'city': 'Glasgow',      'country': 'United Kingdom'},
+    'GBMAN': {'name': 'Manchester Piccadilly','city': 'Manchester',   'country': 'United Kingdom'},
+    'GBBHM': {'name': 'Birmingham New St',    'city': 'Birmingham',   'country': 'United Kingdom'},
+    'GBBRS': {'name': 'Bristol Temple Meads', 'city': 'Bristol',      'country': 'United Kingdom'},
+    # ── France ──────────────────────────────────────────────────────────────
+    'FRPAR': {'name': 'Paris Gare du Nord',   'city': 'Paris',        'country': 'France'},
+    'FRLYS': {'name': 'Lyon Part-Dieu',       'city': 'Lyon',         'country': 'France'},
+    'FRMRS': {'name': 'Marseille St-Charles', 'city': 'Marseille',    'country': 'France'},
+    'FRNIC': {'name': 'Nice-Ville',           'city': 'Nice',         'country': 'France'},
+    'FRBOD': {'name': 'Bordeaux St-Jean',     'city': 'Bordeaux',     'country': 'France'},
+    'FRTLS': {'name': 'Toulouse Matabiau',    'city': 'Toulouse',     'country': 'France'},
+    'FRSXB': {'name': 'Strasbourg',           'city': 'Strasbourg',   'country': 'France'},
+    'FRNTE': {'name': 'Nantes',               'city': 'Nantes',       'country': 'France'},
+    # ── Belgium / Netherlands ───────────────────────────────────────────────
+    'BEBRU': {'name': 'Brussels-Midi',        'city': 'Brussels',     'country': 'Belgium'},
+    'NLAMS': {'name': 'Amsterdam Centraal',   'city': 'Amsterdam',    'country': 'Netherlands'},
+    'NLRTM': {'name': 'Rotterdam Centraal',   'city': 'Rotterdam',    'country': 'Netherlands'},
+    # ── Germany ─────────────────────────────────────────────────────────────
+    'DEFRA': {'name': 'Frankfurt Hbf',        'city': 'Frankfurt',    'country': 'Germany'},
+    'DEBER': {'name': 'Berlin Hbf',           'city': 'Berlin',       'country': 'Germany'},
+    'DEMUC': {'name': 'Munich Hbf',           'city': 'Munich',       'country': 'Germany'},
+    'DEHAM': {'name': 'Hamburg Hbf',          'city': 'Hamburg',      'country': 'Germany'},
+    'DECGN': {'name': 'Cologne Hbf',          'city': 'Cologne',      'country': 'Germany'},
+    'DESTT': {'name': 'Stuttgart Hbf',        'city': 'Stuttgart',    'country': 'Germany'},
+    'DEDUS': {'name': 'Düsseldorf Hbf',       'city': 'Düsseldorf',   'country': 'Germany'},
+    'DENUR': {'name': 'Nuremberg Hbf',        'city': 'Nuremberg',    'country': 'Germany'},
+    'DEHAN': {'name': 'Hannover Hbf',         'city': 'Hannover',     'country': 'Germany'},
+    # ── Switzerland ─────────────────────────────────────────────────────────
+    'CHZRH': {'name': 'Zurich Hbf',           'city': 'Zurich',       'country': 'Switzerland'},
+    'CHGVA': {'name': 'Geneva Cornavin',      'city': 'Geneva',       'country': 'Switzerland'},
+    'CHBSL': {'name': 'Basel SBB',            'city': 'Basel',        'country': 'Switzerland'},
+    'CHBRN': {'name': 'Bern',                 'city': 'Bern',         'country': 'Switzerland'},
+    # ── Austria ─────────────────────────────────────────────────────────────
+    'ATVIE': {'name': 'Vienna Hbf',           'city': 'Vienna',       'country': 'Austria'},
+    'ATSBG': {'name': 'Salzburg Hbf',         'city': 'Salzburg',     'country': 'Austria'},
+    'ATGRZ': {'name': 'Graz Hbf',             'city': 'Graz',         'country': 'Austria'},
+    # ── Italy ───────────────────────────────────────────────────────────────
+    'ITMIL': {'name': 'Milan Centrale',       'city': 'Milan',        'country': 'Italy'},
+    'ITROM': {'name': 'Rome Termini',         'city': 'Rome',         'country': 'Italy'},
+    'ITTRN': {'name': 'Turin Porta Nuova',    'city': 'Turin',        'country': 'Italy'},
+    'ITFLO': {'name': 'Florence SMN',         'city': 'Florence',     'country': 'Italy'},
+    'ITVCE': {'name': 'Venice Santa Lucia',   'city': 'Venice',       'country': 'Italy'},
+    'ITNAP': {'name': 'Naples Centrale',      'city': 'Naples',       'country': 'Italy'},
+    'ITBLN': {'name': 'Bologna Centrale',     'city': 'Bologna',      'country': 'Italy'},
+    # ── Spain / Portugal ────────────────────────────────────────────────────
+    'ESMAD': {'name': 'Madrid Atocha',        'city': 'Madrid',       'country': 'Spain'},
+    'ESBCN': {'name': 'Barcelona Sants',      'city': 'Barcelona',    'country': 'Spain'},
+    'ESSVQ': {'name': 'Seville Santa Justa',  'city': 'Seville',      'country': 'Spain'},
+    'ESVLC': {'name': 'Valencia Joaquín Sorolla', 'city': 'Valencia', 'country': 'Spain'},
+    'ESMLG': {'name': 'Málaga Maria Zambrano','city': 'Málaga',       'country': 'Spain'},
+    'PTLIS': {'name': 'Lisbon Oriente',       'city': 'Lisbon',       'country': 'Portugal'},
+    'PTOPO': {'name': 'Porto Campanhã',       'city': 'Porto',        'country': 'Portugal'},
+    # ── Czech Republic / Slovakia ────────────────────────────────────────────
+    'CZPRG': {'name': 'Prague hl.n.',         'city': 'Prague',       'country': 'Czech Republic'},
+    'CZBRQ': {'name': 'Brno hl.n.',           'city': 'Brno',         'country': 'Czech Republic'},
+    'SKBTS': {'name': 'Bratislava hl.st.',    'city': 'Bratislava',   'country': 'Slovakia'},
+    # ── Hungary / Romania ────────────────────────────────────────────────────
+    'HUBUD': {'name': 'Budapest Keleti',      'city': 'Budapest',     'country': 'Hungary'},
+    'ROBUH': {'name': 'Bucharest Nord',       'city': 'Bucharest',    'country': 'Romania'},
+    # ── Poland ──────────────────────────────────────────────────────────────
+    'PLWAW': {'name': 'Warsaw Centralna',     'city': 'Warsaw',       'country': 'Poland'},
+    'PLKRK': {'name': 'Kraków Główny',        'city': 'Kraków',       'country': 'Poland'},
+    'PLWRO': {'name': 'Wrocław Główny',       'city': 'Wrocław',      'country': 'Poland'},
+    'PLGDN': {'name': 'Gdańsk Główny',        'city': 'Gdańsk',       'country': 'Poland'},
+    # ── Western Balkans / Southeast Europe ──────────────────────────────────
+    'SILJB': {'name': 'Ljubljana',            'city': 'Ljubljana',    'country': 'Slovenia'},
+    'HRZAG': {'name': 'Zagreb Glavni kol.',   'city': 'Zagreb',       'country': 'Croatia'},
+    'RSBEG': {'name': 'Belgrade Centar',      'city': 'Belgrade',     'country': 'Serbia'},
+    'BGSFP': {'name': 'Sofia',                'city': 'Sofia',        'country': 'Bulgaria'},
+    'GRTHE': {'name': 'Thessaloniki',         'city': 'Thessaloniki', 'country': 'Greece'},
+    'GRATH': {'name': 'Athens Larissa',       'city': 'Athens',       'country': 'Greece'},
+    'TRIST': {'name': 'Istanbul Halkali',     'city': 'Istanbul',     'country': 'Turkey'},
+    # ── Scandinavia ─────────────────────────────────────────────────────────
+    'SESTO': {'name': 'Stockholm Centralen',  'city': 'Stockholm',    'country': 'Sweden'},
+    'SEGOT': {'name': 'Gothenburg Centralen', 'city': 'Gothenburg',   'country': 'Sweden'},
+    'SEMAL': {'name': 'Malmö Centralen',      'city': 'Malmö',        'country': 'Sweden'},
+    'DKCPH': {'name': 'Copenhagen H',         'city': 'Copenhagen',   'country': 'Denmark'},
+    'NOOSL': {'name': 'Oslo S',               'city': 'Oslo',         'country': 'Norway'},
+    # ── Baltic ──────────────────────────────────────────────────────────────
+    'EETAL': {'name': 'Tallinn',              'city': 'Tallinn',      'country': 'Estonia'},
+    'LVRIX': {'name': 'Riga',                 'city': 'Riga',         'country': 'Latvia'},
+    'LTVNO': {'name': 'Vilnius',              'city': 'Vilnius',      'country': 'Lithuania'},
 }
 
 # Airport IATA → nearest rail station (same metro area)
 AIRPORT_TO_RAIL = {
-    # London
+    # ── United Kingdom ──────────────────────────────────────────────────────
     'LHR': 'GBLON', 'LGW': 'GBLON', 'STN': 'GBLON', 'LTN': 'GBLON', 'LCY': 'GBLON',
-    # Paris
+    'EDI': 'GBEDB',
+    'GLA': 'GBGLA',
+    'MAN': 'GBMAN',
+    'BHX': 'GBBHM',
+    'BRS': 'GBBRS',
+    # ── France ──────────────────────────────────────────────────────────────
     'CDG': 'FRPAR', 'ORY': 'FRPAR',
-    # Brussels
+    'LYS': 'FRLYS',
+    'MRS': 'FRMRS',
+    'NCE': 'FRNIC',
+    'BOD': 'FRBOD',
+    'TLS': 'FRTLS',
+    'SXB': 'FRSXB',
+    'NTE': 'FRNTE',
+    # ── Belgium / Netherlands ───────────────────────────────────────────────
     'BRU': 'BEBRU',
-    # Amsterdam
     'AMS': 'NLAMS',
-    # Frankfurt
+    'RTM': 'NLRTM',
+    # ── Germany ─────────────────────────────────────────────────────────────
     'FRA': 'DEFRA',
-    # Berlin
     'BER': 'DEBER', 'TXL': 'DEBER',
-    # Munich
     'MUC': 'DEMUC',
-    # Hamburg
     'HAM': 'DEHAM',
-    # Zurich
+    'CGN': 'DECGN',
+    'STR': 'DESTT',
+    'DUS': 'DEDUS',
+    'NUE': 'DENUR',
+    'HAJ': 'DEHAN',
+    # ── Switzerland ─────────────────────────────────────────────────────────
     'ZRH': 'CHZRH',
-    # Geneva
     'GVA': 'CHGVA',
-    # Madrid
-    'MAD': 'ESMAD',
-    # Barcelona
-    'BCN': 'ESBCN',
-    # Rome
-    'FCO': 'ITROM', 'CIA': 'ITROM',
-    # Milan
-    'MXP': 'ITMIL', 'LIN': 'ITMIL',
-    # Vienna
+    'BSL': 'CHBSL', 'EAP': 'CHBSL', 'MLH': 'CHBSL',
+    'BRN': 'CHBRN',
+    # ── Austria ─────────────────────────────────────────────────────────────
     'VIE': 'ATVIE',
-    # Prague
+    'SZG': 'ATSBG',
+    'GRZ': 'ATGRZ',
+    # ── Italy ───────────────────────────────────────────────────────────────
+    'MXP': 'ITMIL', 'LIN': 'ITMIL',
+    'FCO': 'ITROM', 'CIA': 'ITROM',
+    'TRN': 'ITTRN',
+    'FLR': 'ITFLO',
+    'VCE': 'ITVCE', 'TSF': 'ITVCE',
+    'NAP': 'ITNAP',
+    'BLQ': 'ITBLN',
+    # ── Spain / Portugal ────────────────────────────────────────────────────
+    'MAD': 'ESMAD',
+    'BCN': 'ESBCN',
+    'SVQ': 'ESSVQ',
+    'VLC': 'ESVLC',
+    'AGP': 'ESMLG',
+    'LIS': 'PTLIS',
+    'OPO': 'PTOPO',
+    # ── Czech Republic / Slovakia ────────────────────────────────────────────
     'PRG': 'CZPRG',
-    # Budapest
+    'BRQ': 'CZBRQ',
+    'BTS': 'SKBTS',
+    # ── Hungary / Romania ────────────────────────────────────────────────────
     'BUD': 'HUBUD',
-    # Warsaw
+    'OTP': 'ROBUH', 'BBU': 'ROBUH',
+    # ── Poland ──────────────────────────────────────────────────────────────
     'WAW': 'PLWAW',
-    # Stockholm
+    'KRK': 'PLKRK',
+    'WRO': 'PLWRO',
+    'GDN': 'PLGDN',
+    # ── Western Balkans / Southeast Europe ──────────────────────────────────
+    'LJU': 'SILJB',
+    'ZAG': 'HRZAG',
+    'BEG': 'RSBEG',
+    'SOF': 'BGSFP',
+    'SKG': 'GRTHE',
+    'ATH': 'GRATH',
+    'IST': 'TRIST', 'SAW': 'TRIST',
+    # ── Scandinavia ─────────────────────────────────────────────────────────
     'ARN': 'SESTO', 'NYO': 'SESTO',
-    # Copenhagen
+    'GOT': 'SEGOT',
+    'MMX': 'SEMAL',
     'CPH': 'DKCPH',
-    # Oslo
     'OSL': 'NOOSL',
+    # ── Baltic ──────────────────────────────────────────────────────────────
+    'TLL': 'EETAL',
+    'RIX': 'LVRIX',
+    'VNO': 'LTVNO',
 }
 
 # Reverse lookup: rail station → list of served airport IATAs
@@ -266,12 +373,38 @@ RAIL_TO_AIRPORTS = defaultdict(list)
 for _iata, _rail in AIRPORT_TO_RAIL.items():
     RAIL_TO_AIRPORTS[_rail].append(_iata)
 
-# High-speed / inter-city rail connections (bidirectional, distances in km)
+# High-speed and main-line rail connections (bidirectional, distances in km).
+# Covers the Interrail network across the UK and Europe.
 _RAIL_EDGES = [
-    # ── UK / Channel Tunnel ──────────────────────────────────────────────
+    # ── UK internal (West Coast, East Coast, Great Western Main Lines) ──────
+    ('GBLON', 'GBBHM',  180, 'Avanti/CrossCountry'),
+    ('GBLON', 'GBMAN',  295, 'Avanti West Coast'),
+    ('GBLON', 'GBBRS',  190, 'GWR'),
+    ('GBLON', 'GBEDB',  630, 'LNER'),
+    ('GBLON', 'GBGLA',  645, 'Avanti West Coast'),
+    ('GBBHM', 'GBMAN',  130, 'Avanti/Transpennine'),
+    ('GBBHM', 'GBEDB',  450, 'CrossCountry'),
+    ('GBMAN', 'GBEDB',  335, 'Transpennine/LNER'),
+    ('GBMAN', 'GBGLA',  345, 'Avanti West Coast'),
+    ('GBEDB', 'GBGLA',   75, 'ScotRail'),
+    # ── Channel Tunnel ───────────────────────────────────────────────────────
     ('GBLON', 'FRPAR',  493, 'Eurostar'),
     ('GBLON', 'BEBRU',  370, 'Eurostar'),
-    # ── France / Benelux ─────────────────────────────────────────────────
+    # ── France internal (TGV) ────────────────────────────────────────────────
+    ('FRPAR', 'FRLYS',  465, 'TGV'),
+    ('FRPAR', 'FRMRS',  863, 'TGV'),
+    ('FRPAR', 'FRNIC',  930, 'TGV'),
+    ('FRPAR', 'FRBOD',  580, 'TGV'),
+    ('FRPAR', 'FRTLS',  680, 'TGV'),
+    ('FRPAR', 'FRNTE',  385, 'TGV'),
+    ('FRPAR', 'FRSXB',  490, 'TGV'),
+    ('FRLYS', 'FRMRS',  315, 'TGV'),
+    ('FRLYS', 'FRNIC',  430, 'TGV'),
+    ('FRLYS', 'FRTLS',  530, 'TGV'),
+    ('FRLYS', 'CHGVA',  155, 'TGV/IC'),
+    ('FRLYS', 'ITMIL',  400, 'TGV/Frecciarossa'),
+    ('FRMRS', 'FRNIC',  200, 'TGV'),
+    # ── France / Benelux / Germany ───────────────────────────────────────────
     ('FRPAR', 'BEBRU',  312, 'Eurostar/Thalys'),
     ('FRPAR', 'NLAMS',  503, 'Thalys'),
     ('FRPAR', 'DEFRA',  579, 'TGV/ICE'),
@@ -279,36 +412,125 @@ _RAIL_EDGES = [
     ('FRPAR', 'CHGVA',  501, 'TGV'),
     ('FRPAR', 'ESBCN', 1040, 'TGV/AVE'),
     ('FRPAR', 'ITMIL',  693, 'TGV/Frecciarossa'),
+    ('FRPAR', 'ITTRN',  850, 'TGV/Frecciarossa'),
+    ('FRSXB', 'DEFRA',  220, 'TGV/ICE'),
+    ('FRSXB', 'CHBSL',   80, 'TER/IC'),
     ('BEBRU', 'NLAMS',  192, 'Thalys'),
     ('BEBRU', 'DEFRA',  496, 'ICE/Thalys'),
-    # ── Germany / Austria / Switzerland ──────────────────────────────────
+    ('BEBRU', 'DECGN',  220, 'Thalys'),
     ('NLAMS', 'DEFRA',  487, 'ICE'),
     ('NLAMS', 'DEBER',  648, 'ICE'),
+    ('NLAMS', 'DECGN',  260, 'ICE/Thalys'),
+    ('NLRTM', 'NLAMS',   80, 'Intercity'),
+    ('NLRTM', 'BEBRU',  140, 'Thalys'),
+    ('NLRTM', 'DECGN',  230, 'ICE'),
+    # ── Germany internal (ICE network) ──────────────────────────────────────
     ('DEFRA', 'DEBER',  557, 'ICE'),
     ('DEFRA', 'DEMUC',  302, 'ICE'),
     ('DEFRA', 'ATVIE',  744, 'ICE'),
     ('DEFRA', 'CHZRH',  368, 'ICE'),
+    ('DEFRA', 'DECGN',  190, 'ICE'),
+    ('DEFRA', 'DESTT',  200, 'ICE'),
+    ('DEFRA', 'DEDUS',  240, 'ICE'),
+    ('DEFRA', 'DEHAN',  375, 'ICE'),
+    ('DEFRA', 'DENUR',  225, 'ICE'),
     ('DEBER', 'DEHAM',  289, 'ICE'),
     ('DEBER', 'CZPRG',  353, 'EC'),
     ('DEBER', 'PLWAW',  573, 'ICE'),
+    ('DEBER', 'DECGN',  580, 'ICE'),
+    ('DEBER', 'DENUR',  435, 'ICE'),
+    ('DEBER', 'DEHAN',  290, 'ICE'),
     ('DEHAM', 'DKCPH',  361, 'ICE'),
+    ('DEHAM', 'DEHAN',  150, 'ICE'),
+    ('DEHAM', 'DECGN',  420, 'ICE'),
+    ('DECGN', 'DEDUS',   45, 'RE/ICE'),
+    ('DEDUS', 'DEHAN',  290, 'ICE'),
+    ('DEDUS', 'DEHAM',  380, 'ICE'),
+    ('DEHAN', 'DEBER',  290, 'ICE'),
+    ('DEHAN', 'DECGN',  290, 'ICE'),
+    ('DEHAN', 'DENUR',  390, 'ICE'),
     ('DEMUC', 'CHZRH',  319, 'EC/ICE'),
     ('DEMUC', 'ATVIE',  379, 'Railjet'),
     ('DEMUC', 'ITMIL',  514, 'ICE/EC'),
-    # ── Switzerland / Italy ───────────────────────────────────────────────
+    ('DEMUC', 'DESTT',  225, 'ICE'),
+    ('DEMUC', 'DENUR',  165, 'ICE'),
+    ('DEMUC', 'ATSBG',  150, 'ICE/Railjet'),
+    ('DESTT', 'CHZRH',  200, 'ICE'),
+    # ── Switzerland ─────────────────────────────────────────────────────────
     ('CHZRH', 'ITMIL',  294, 'EC'),
     ('CHZRH', 'CHGVA',  236, 'IC'),
-    ('ITMIL', 'ITROM',  572, 'Frecciarossa'),
-    # ── Iberia ───────────────────────────────────────────────────────────
-    ('ESBCN', 'ESMAD',  620, 'AVE'),
-    # ── Central / Eastern Europe ─────────────────────────────────────────
+    ('CHZRH', 'CHBSL',   85, 'IC'),
+    ('CHZRH', 'CHBRN',  125, 'IC'),
+    ('CHGVA', 'CHBRN',  165, 'IC'),
+    ('CHGVA', 'FRNIC',  370, 'TGV'),
+    ('CHBRN', 'CHBSL',  100, 'IC'),
+    ('CHBSL', 'DEFRA',  280, 'ICE'),
+    # ── Austria ─────────────────────────────────────────────────────────────
     ('ATVIE', 'HUBUD',  243, 'Railjet'),
     ('ATVIE', 'CZPRG',  323, 'Railjet'),
+    ('ATVIE', 'ATSBG',  300, 'Railjet'),
+    ('ATVIE', 'ATGRZ',  200, 'Railjet'),
+    ('ATVIE', 'SKBTS',   65, 'Railjet/EC'),
+    ('ATVIE', 'SILJB',  400, 'EC'),
+    ('ATSBG', 'DEMUC',  150, 'ICE/Railjet'),
+    ('ATGRZ', 'SILJB',  190, 'EC'),
+    ('ATGRZ', 'HRZAG',  250, 'EC'),
+    # ── Italy (Frecciarossa / EC) ────────────────────────────────────────────
+    ('ITMIL', 'ITTRN',  140, 'Frecciarossa'),
+    ('ITMIL', 'ITVCE',  265, 'Frecciarossa'),
+    ('ITMIL', 'ITBLN',  210, 'Frecciarossa'),
+    ('ITMIL', 'ITFLO',  300, 'Frecciarossa'),
+    ('ITMIL', 'ITROM',  572, 'Frecciarossa'),
+    ('ITBLN', 'ITFLO',  105, 'Frecciarossa'),
+    ('ITBLN', 'ITVCE',  150, 'Frecciarossa'),
+    ('ITBLN', 'ITROM',  385, 'Frecciarossa'),
+    ('ITFLO', 'ITROM',  280, 'Frecciarossa'),
+    ('ITROM', 'ITNAP',  220, 'Frecciarossa'),
+    ('ITTRN', 'FRNIC',  215, 'EC/TGV'),
+    ('ITVCE', 'ATVIE',  580, 'Nightjet/Railjet'),
+    # ── Iberia (AVE / Alfa Pendular) ─────────────────────────────────────────
+    ('ESBCN', 'ESMAD',  620, 'AVE'),
+    ('ESBCN', 'ESVLC',  350, 'AVE'),
+    ('ESMAD', 'ESVLC',  390, 'AVE'),
+    ('ESMAD', 'ESSVQ',  470, 'AVE'),
+    ('ESMAD', 'ESMLG',  530, 'AVE'),
+    ('ESMAD', 'PTLIS',  640, 'Renfe/CP'),
+    ('PTLIS', 'PTOPO',  310, 'Alfa Pendular'),
+    # ── Central / Eastern Europe ─────────────────────────────────────────────
     ('CZPRG', 'HUBUD',  540, 'EC'),
     ('CZPRG', 'PLWAW',  666, 'EC'),
-    # ── Scandinavia ──────────────────────────────────────────────────────
+    ('CZPRG', 'CZBRQ',  205, 'SC/EC'),
+    ('CZPRG', 'SKBTS',  330, 'EC'),
+    ('SKBTS', 'PLWAW',  555, 'EC'),
+    ('HUBUD', 'HRZAG',  370, 'EC/IC'),
+    ('HUBUD', 'RSBEG',  380, 'EC'),
+    ('HUBUD', 'ROBUH',  780, 'IC/EN'),
+    ('SILJB', 'HRZAG',   70, 'EC'),
+    ('HRZAG', 'RSBEG',  375, 'EC/IC'),
+    # ── Poland ───────────────────────────────────────────────────────────────
+    ('PLWAW', 'PLKRK',  295, 'IC/EIC'),
+    ('PLWAW', 'PLWRO',  355, 'IC'),
+    ('PLWAW', 'PLGDN',  340, 'IC'),
+    ('PLKRK', 'CZBRQ',  295, 'EC'),
+    ('PLWRO', 'DEBER',  430, 'EC'),
+    # ── Southeast Europe / Balkans ───────────────────────────────────────────
+    ('RSBEG', 'BGSFP',  400, 'EC'),
+    ('BGSFP', 'GRTHE',  565, 'IC'),
+    ('BGSFP', 'ROBUH',  390, 'IC'),
+    ('BGSFP', 'TRIST',  560, 'EC'),
+    ('GRTHE', 'GRATH',  500, 'IC'),
+    ('GRTHE', 'TRIST',  560, 'EC'),
+    # ── Scandinavia ──────────────────────────────────────────────────────────
     ('DKCPH', 'SESTO',  613, 'SJ/DSB'),
+    ('DKCPH', 'SEGOT',  320, 'SJ/DSB'),
     ('SESTO', 'NOOSL',  521, 'NSB'),
+    ('SESTO', 'SEGOT',  470, 'SJ X2000'),
+    ('SEGOT', 'SEMAL',  290, 'SJ'),
+    ('SEMAL', 'DKCPH',   25, 'Öresund'),
+    # ── Baltic ───────────────────────────────────────────────────────────────
+    ('LTVNO', 'PLWAW',  490, 'IC/EN'),
+    ('LTVNO', 'LVRIX',  295, 'IC'),
+    ('LVRIX', 'EETAL',  310, 'IC'),
 ]
 
 RAIL_GRAPH = defaultdict(list)
