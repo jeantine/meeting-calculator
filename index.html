@@ -836,10 +836,9 @@
         <table class="dest-table" id="overallTable">
           <thead>
             <tr>
-              <th>#</th><th>IATA</th><th>City</th><th>Continent</th>
-              <th class="r">Est. Cost (USD)</th><th class="r">Est. Carbon</th>
-              <th class="r">Total Dist</th><th class="r">Avg Dist</th>
-              <th class="r">Avg Flights</th><th></th>
+              <th>#</th><th>City</th>
+              <th class="r">Avg Flights</th><th class="r">Est. Cost (USD)</th><th class="r">Est. Carbon</th>
+              <th class="r">Total Dist</th><th class="r">Avg Dist</th><th></th>
             </tr>
           </thead>
           <tbody id="overallBody"></tbody>
@@ -850,10 +849,9 @@
         <table class="dest-table" id="homeTable">
           <thead>
             <tr>
-              <th>#</th><th>IATA</th><th>City</th><th>Continent</th>
-              <th class="r">Est. Cost (USD)</th><th class="r">Est. Carbon</th>
-              <th class="r">Total Dist</th><th class="r">Avg Dist</th>
-              <th class="r">Avg Flights</th><th>Local Attendees</th><th></th>
+              <th>#</th><th>City</th>
+              <th class="r">Avg Flights</th><th class="r">Est. Cost (USD)</th><th class="r">Est. Carbon</th>
+              <th class="r">Total Dist</th><th class="r">Avg Dist</th><th>Local Attendees</th><th></th>
             </tr>
           </thead>
           <tbody id="homeBody"></tbody>
@@ -1170,19 +1168,17 @@ function renderTables(data) {
   overallBody.innerHTML = data.overall.map((d, i) => `
     <tr data-iata="${d.iata}" onclick="selectDest('${d.iata}', this)">
       <td><span class="rank-num">${i+1}</span></td>
-      <td><span class="iata-badge${d.is_home ? ' home' : ''}">${d.iata}</span></td>
       <td>
         <div class="city-name">${d.city}, ${d.country}
           ${d.is_home ? '<span class="home-tag">home city</span>' : ''}
         </div>
-        <div class="airport-name">${d.name}</div>
+        <div class="airport-name">${d.iata} · ${d.name}</div>
       </td>
-      <td><span class="continent-badge">${d.continent || ''}</span></td>
+      <td class="r">${d.avg_hops}</td>
       <td class="r em">${d.est_cost != null ? 'US$' + d.est_cost.toLocaleString() : '—'}</td>
       <td class="r em">${d.est_carbon != null ? d.est_carbon.toLocaleString() + ' kg' : '—'}</td>
       <td class="r">${fmt(d.total_dist)}</td>
       <td class="r">${fmt(d.avg_dist)}</td>
-      <td class="r">${d.avg_hops}</td>
       <td class="routes-hint-cell"><span class="routes-pill">View routes →</span></td>
     </tr>
   `).join('');
@@ -1190,17 +1186,15 @@ function renderTables(data) {
   homeBody.innerHTML = data.home.map((d, i) => `
     <tr data-iata="${d.iata}" onclick="selectDest('${d.iata}', this)">
       <td><span class="rank-num">${i+1}</span></td>
-      <td><span class="iata-badge home">${d.iata}</span></td>
       <td>
         <div class="city-name">${d.city}, ${d.country}</div>
-        <div class="airport-name">${d.name}</div>
+        <div class="airport-name">${d.iata} · ${d.name}</div>
       </td>
-      <td><span class="continent-badge">${d.continent || ''}</span></td>
+      <td class="r">${d.avg_hops}</td>
       <td class="r em">${d.est_cost != null ? 'US$' + d.est_cost.toLocaleString() : '—'}</td>
       <td class="r em">${d.est_carbon != null ? d.est_carbon.toLocaleString() + ' kg' : '—'}</td>
       <td class="r">${fmt(d.total_dist)}</td>
       <td class="r">${fmt(d.avg_dist)}</td>
-      <td class="r">${d.avg_hops}</td>
       <td class="r">${d.local_count} local</td>
       <td class="routes-hint-cell"><span class="routes-pill">View routes →</span></td>
     </tr>

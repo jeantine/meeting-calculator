@@ -213,8 +213,8 @@ class TestSortOrder:
         hops = [d["avg_hops"] for d in overall]
         assert hops == sorted(hops), f"Results not sorted by avg_hops: {hops}"
 
-    def test_equal_hops_ordered_by_carbon(self, client):
-        """When two destinations share the same hop count the lower-carbon one ranks first."""
+    def test_equal_hops_ordered_by_cost_then_carbon(self, client):
+        """Within the same hop count, results are sorted by cost first, then carbon."""
         payload = {
             "attendees": [
                 {"city": "London", "iatas": ["LHR"], "count": 1},
@@ -225,14 +225,22 @@ class TestSortOrder:
         data = res.get_json()
         overall = data["overall"]
 
-        # Group by rounded avg_hops and check carbon within each group
+        # Group by rounded avg_hops and check cost (primary) then carbon (secondary)
         from itertools import groupby
         for _, group in groupby(overall, key=lambda d: d["avg_hops"]):
             group = list(group)
-            carbons = [d["est_carbon"] for d in group]
-            assert carbons == sorted(carbons), (
-                f"Within equal-hop group, carbon not sorted: {carbons}"
+            costs = [d["est_cost"] for d in group]
+            assert costs == sorted(costs), (
+                f"Within equal-hop group, cost not sorted: {costs}"
             )
+            # Within equal cost, carbon should also be sorted
+            from itertools import groupby as _gb
+            for _, cost_group in _gb(group, key=lambda d: d["est_cost"]):
+                cost_group = list(cost_group)
+                carbons = [d["est_carbon"] for d in cost_group]
+                assert carbons == sorted(carbons), (
+                    f"Within equal-hop/equal-cost group, carbon not sorted: {carbons}"
+                )
 
 
 # ─── 5. /api/find_destinations ────────────────────────────────────────────────
@@ -637,6 +645,12 @@ class TestUIFeatures:
         cost_pos = html.index("Est. Cost (USD)")
         dist_pos = html.index("Total Dist")
         assert cost_pos < dist_pos, "Est. Cost column must come before Total Dist"
+
+    def test_avg_flights_column_appears_before_cost_column(self, html):
+        """Avg Flights (primary sort key) must be to the left of Est. Cost."""
+        flights_pos = html.index("Avg Flights")
+        cost_pos    = html.index("Est. Cost (USD)")
+        assert flights_pos < cost_pos, "Avg Flights column must come before Est. Cost"
 
     # ── attendee count editing ────────────────────────────────────────────────
 

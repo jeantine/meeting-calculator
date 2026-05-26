@@ -378,7 +378,7 @@ def find_meeting_destinations(attendees, top_n=10, continent_filter=None):
             candidate_scores[dest] = (total_hops, total_dist, total_price, total_carbon)
 
     # Sort by fewest avg flights, then lowest carbon
-    all_ranked = sorted(candidate_scores.items(), key=lambda x: (x[1][0], x[1][3]))
+    all_ranked = sorted(candidate_scores.items(), key=lambda x: (x[1][0], x[1][2], x[1][3]))
 
     seen_cities, ranked = set(), []
     for iata, scores in all_ranked:
