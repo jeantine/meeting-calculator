@@ -1427,7 +1427,7 @@ class TestStaticFileServing:
 class TestPageStructure:
 
     def test_page_title(self, html):
-        assert "<title>Global Meeting Finder</title>" in html
+        assert "<title>Global Meeting Destination Finder</title>" in html
 
     def test_viewport_meta_tag(self, html):
         assert 'name="viewport"' in html
