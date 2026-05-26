@@ -198,7 +198,7 @@ class TestStrandedAirports:
 class TestSortOrder:
     """Results must be sorted: fewest avg flights first, then lowest carbon."""
 
-    def test_overall_results_sorted_by_hops_then_carbon(self, client):
+    def test_overall_results_sorted_by_cost_then_carbon(self, client):
         payload = {
             "attendees": [
                 {"city": "London",   "iatas": ["LHR"], "count": 1},
@@ -211,8 +211,8 @@ class TestSortOrder:
         overall = data["overall"]
         assert len(overall) > 1
 
-        hops = [d["avg_hops"] for d in overall]
-        assert hops == sorted(hops), f"Results not sorted by avg_hops: {hops}"
+        costs = [d["est_cost"] for d in overall]
+        assert costs == sorted(costs), f"Results not sorted by est_cost: {costs}"
 
     def test_equal_hops_ordered_by_cost_then_carbon(self, client):
         """Within the same hop count, results are sorted by cost first, then carbon."""
@@ -647,11 +647,11 @@ class TestUIFeatures:
         dist_pos = html.index("Total Dist")
         assert cost_pos < dist_pos, "Est. Cost column must come before Total Dist"
 
-    def test_avg_flights_column_appears_before_cost_column(self, html):
-        """Avg Flights (primary sort key) must be to the left of Est. Cost."""
+    def test_avg_flights_column_appears_after_carbon_column(self, html):
+        """Avg Flights must appear to the right of Est. Carbon (cost/carbon sort first)."""
+        carbon_pos  = html.index("Est. Carbon")
         flights_pos = html.index("Avg Flights")
-        cost_pos    = html.index("Est. Cost (USD)")
-        assert flights_pos < cost_pos, "Avg Flights column must come before Est. Cost"
+        assert carbon_pos < flights_pos, "Est. Carbon column must come before Avg Flights"
 
     # ── attendee count editing ────────────────────────────────────────────────
 

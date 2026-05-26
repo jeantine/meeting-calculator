@@ -848,7 +848,7 @@
           <thead>
             <tr>
               <th>#</th><th>City</th>
-              <th class="r">Avg Flights</th><th class="r">Est. Cost (USD)</th><th class="r">Est. Carbon</th>
+              <th class="r">Est. Cost (USD)</th><th class="r">Est. Carbon</th><th class="r">Avg Flights</th>
               <th class="r">Total Dist</th><th class="r">Avg Dist</th><th></th>
             </tr>
           </thead>
@@ -861,7 +861,7 @@
           <thead>
             <tr>
               <th>#</th><th>City</th>
-              <th class="r">Avg Flights</th><th class="r">Est. Cost (USD)</th><th class="r">Est. Carbon</th>
+              <th class="r">Est. Cost (USD)</th><th class="r">Est. Carbon</th><th class="r">Avg Flights</th>
               <th class="r">Total Dist</th><th class="r">Avg Dist</th><th>Local Attendees</th><th></th>
             </tr>
           </thead>
@@ -1199,9 +1199,9 @@ function renderTables(data) {
         </div>
         <div class="airport-name">${d.iata} · ${d.name}</div>
       </td>
-      <td class="r">${d.avg_hops}</td>
       <td class="r em">${d.est_cost != null ? 'US$' + d.est_cost.toLocaleString() : '—'}${pctTag(d.est_cost, minOverallCost)}</td>
       <td class="r em">${d.est_carbon != null ? d.est_carbon.toLocaleString() + ' kg' : '—'}${pctTag(d.est_carbon, minOverallCarbon)}</td>
+      <td class="r">${d.avg_hops}</td>
       <td class="r">${fmt(d.total_dist)}</td>
       <td class="r">${fmt(d.avg_dist)}</td>
       <td class="routes-hint-cell"><span class="routes-pill">View routes →</span></td>
@@ -1218,9 +1218,9 @@ function renderTables(data) {
         <div class="city-name">${d.city}, ${d.country}</div>
         <div class="airport-name">${d.iata} · ${d.name}</div>
       </td>
-      <td class="r">${d.avg_hops}</td>
       <td class="r em">${d.est_cost != null ? 'US$' + d.est_cost.toLocaleString() : '—'}${pctTag(d.est_cost, minHomeCost)}</td>
       <td class="r em">${d.est_carbon != null ? d.est_carbon.toLocaleString() + ' kg' : '—'}${pctTag(d.est_carbon, minHomeCarbon)}</td>
+      <td class="r">${d.avg_hops}</td>
       <td class="r">${fmt(d.total_dist)}</td>
       <td class="r">${fmt(d.avg_dist)}</td>
       <td class="r">${d.local_count} local</td>
