@@ -1,6 +1,8 @@
 # Cost and Carbon Estimation
 
-This document explains how the Meeting Calculator estimates flight cost and CO₂ emissions for each candidate destination. All figures are one-way per person unless stated otherwise.
+This document explains how the Meeting Calculator estimates travel cost and CO₂ emissions for each candidate destination. All figures are one-way per person unless stated otherwise.
+
+The app considers both **air** and **European rail** for each leg and chooses whichever mode produces the better outcome (see [Rail estimation](#rail-estimation) below).
 
 ---
 
@@ -189,3 +191,85 @@ SerpAPI Google Flights is queried for a real return fare for the dates shown. If
 - **Carbon** — SerpAPI's own CO₂ figure is used when present; the distance estimate is the fallback.
 
 If SerpAPI fails (network error, quota, unconfigured key), the distance estimate is used for both price and carbon and the source is flagged as `"estimate (SerpApi failed)"` in the response.
+
+---
+
+## Rail estimation
+
+### Overview
+
+For European journeys, the app automatically checks whether a **high-speed rail** service is available and, if so, whether it beats or is close to the estimated air fare. Rail is chosen when:
+
+- A **direct (one-leg) rail service** exists *and* the rail fare is **≤ 130%** of the equivalent air fare, **or**
+- A **multi-leg rail route** is outright **cheaper** than air.
+
+Rail routes that are more than 30% more expensive than air (on a direct basis) are not used — the app defaults to air for those legs.
+
+### Carbon factor
+
+```
+carbon_kg = total_rail_dist_km × 0.006
+```
+
+The factor **0.006 kg CO₂/pax-km** is based on IEA/EEA data for electrified high-speed rail in Europe. This is typically **15–25× lower** than the equivalent short-haul air journey, because:
+- High-speed rail uses electricity rather than jet fuel.
+- Trains carry far more passengers per unit of energy.
+- There is no radiative forcing effect (contrails) at ground level.
+
+### Fare model
+
+```python
+estimate_rail_fare(dist_km, num_transfers)
+```
+
+| Distance (one-way) | Formula |
+|--------------------|---------|
+| ≤ 300 km | $15 + dist × $0.12 |
+| 301 – 600 km | $25 + dist × $0.09 |
+| 601 – 1 000 km | $40 + dist × $0.075 |
+| > 1 000 km | $55 + dist × $0.065 |
+
+Each rail interchange adds **$15** (transfer penalty). This is much lower than the $60 air-connection penalty because rail interchanges typically involve no re-checking or security.
+
+### Rail network (Phase 1)
+
+The following 21 city stations and 34 bidirectional connections are included:
+
+**Stations:** London, Paris, Brussels, Amsterdam, Frankfurt, Berlin, Munich, Hamburg, Zurich, Geneva, Madrid, Barcelona, Rome, Milan, Vienna, Prague, Budapest, Warsaw, Stockholm, Copenhagen, Oslo
+
+**Key connections and operators:**
+
+| Route | Distance | Operator |
+|-------|----------|----------|
+| London ↔ Paris | 493 km | Eurostar |
+| London ↔ Brussels | 370 km | Eurostar |
+| Paris ↔ Amsterdam | 503 km | Thalys |
+| Paris ↔ Frankfurt | 579 km | TGV/ICE |
+| Paris ↔ Barcelona | 1 040 km | TGV/AVE |
+| Frankfurt ↔ Berlin | 557 km | ICE |
+| Frankfurt ↔ Munich | 302 km | ICE |
+| Munich ↔ Vienna | 379 km | Railjet |
+| Vienna ↔ Budapest | 243 km | Railjet |
+| Vienna ↔ Prague | 323 km | Railjet |
+| Berlin ↔ Warsaw | 573 km | ICE |
+| Copenhagen ↔ Stockholm | 613 km | SJ/DSB |
+| Milan ↔ Rome | 572 km | Frecciarossa |
+
+For the full list see `_RAIL_EDGES` in `app.py`.
+
+### Example
+
+**London (LHR) → Brussels (BRU), 1 direct Eurostar leg:**
+
+| | Air | Rail |
+|--|-----|------|
+| Distance used | 350 km (haversine) | 370 km (track) |
+| One-way fare | $89 | $58 |
+| One-way CO₂ | 59.6 kg | 2.2 kg |
+| **Mode chosen** | | ✅ Rail |
+
+Rail wins because $58 < $89 × 1.30 ($116). The round-trip carbon saving is **114.8 kg per person** — roughly equivalent to a short domestic flight.
+
+### Route detail display
+
+Legs on a rail route show 🚂 in place of ✈, use the station name (e.g. "London St Pancras") rather than an IATA code, and are shaded in a light green to distinguish them from air legs.

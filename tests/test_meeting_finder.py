@@ -59,9 +59,17 @@ from app import (
     AIRLINES,
     GRAPH,
     MAIN_AIRPORTS,
+    RAIL_STATIONS,
+    RAIL_GRAPH,
+    AIRPORT_TO_RAIL,
+    RAIL_TO_AIRPORTS,
+    RAIL_CARBON_FACTOR,
     _carbon_factor,
     app as flask_app,
     estimate_fare,
+    estimate_rail_fare,
+    dijkstra_rail_all,
+    find_best_rail_route,
     find_airports_by_city,
     find_best_route,
     find_meeting_destinations,
@@ -2064,3 +2072,260 @@ class TestEstimateFareEdgeCases:
         two_stops, _ = estimate_fare(2000, 2)
         assert one_stop  == direct   + 60
         assert two_stops == one_stop + 60
+
+
+# ─── 41. European rail network ────────────────────────────────────────────────
+
+class TestEuropeanRail:
+    """
+    Phase 1 European rail: station data, routing, fare estimation, and
+    integration into the route-detail and destination-scoring logic.
+    """
+
+    # ── Static data ───────────────────────────────────────────────────────────
+
+    def test_rail_stations_dict_has_major_cities(self):
+        for code in ['GBLON', 'FRPAR', 'BEBRU', 'NLAMS', 'DEFRA', 'DEBER',
+                     'DEMUC', 'CHZRH', 'ATVIE', 'ITMIL', 'ESBCN']:
+            assert code in RAIL_STATIONS, f"Missing rail station: {code}"
+
+    def test_rail_stations_have_required_fields(self):
+        for code, info in RAIL_STATIONS.items():
+            for field in ('name', 'city', 'country'):
+                assert field in info, f"Rail station {code} missing field: {field}"
+
+    def test_major_european_airports_mapped_to_rail(self):
+        """Key airports must resolve to a rail station via AIRPORT_TO_RAIL."""
+        for iata in ['LHR', 'LGW', 'CDG', 'BRU', 'AMS', 'FRA', 'MUC',
+                     'ZRH', 'VIE', 'PRG', 'BUD', 'WAW', 'CPH', 'OSL']:
+            assert iata in AIRPORT_TO_RAIL, f"{iata} not mapped to a rail station"
+
+    def test_london_airports_map_to_gblon(self):
+        for iata in ['LHR', 'LGW', 'STN', 'LTN', 'LCY']:
+            assert AIRPORT_TO_RAIL.get(iata) == 'GBLON', \
+                f"{iata} should map to GBLON"
+
+    def test_paris_airports_map_to_frpar(self):
+        assert AIRPORT_TO_RAIL.get('CDG') == 'FRPAR'
+        assert AIRPORT_TO_RAIL.get('ORY') == 'FRPAR'
+
+    def test_rail_graph_edges_are_bidirectional(self):
+        """Every connection must exist in both directions."""
+        for station, neighbours in RAIL_GRAPH.items():
+            for dst, dist, _op in neighbours:
+                reverse = [n for n, d, _ in RAIL_GRAPH.get(dst, []) if n == station]
+                assert reverse, f"Missing reverse edge {dst} → {station}"
+
+    def test_rail_to_airports_reverse_mapping_consistent(self):
+        """RAIL_TO_AIRPORTS must be the exact inverse of AIRPORT_TO_RAIL."""
+        for iata, rail_code in AIRPORT_TO_RAIL.items():
+            assert iata in RAIL_TO_AIRPORTS[rail_code], \
+                f"{iata} → {rail_code} not reflected in RAIL_TO_AIRPORTS"
+
+    def test_rail_carbon_factor_is_low(self):
+        """Rail carbon factor must be well below the lowest air factor (0.085)."""
+        assert RAIL_CARBON_FACTOR < 0.02
+
+    # ── estimate_rail_fare ────────────────────────────────────────────────────
+
+    def test_estimate_rail_fare_returns_price_and_carbon(self):
+        price, carbon = estimate_rail_fare(500, 0)
+        assert isinstance(price, int)
+        assert isinstance(carbon, float)
+
+    def test_estimate_rail_fare_london_paris(self):
+        """London–Paris Eurostar (~493 km, direct): fare should be ~$50–$95."""
+        price, carbon = estimate_rail_fare(493, 0)
+        assert 40 < price < 100, f"London–Paris rail fare unexpected: ${price}"
+        assert carbon == round(493 * RAIL_CARBON_FACTOR, 1)
+
+    def test_estimate_rail_fare_transfer_adds_penalty(self):
+        direct, _ = estimate_rail_fare(1000, 0)
+        via_one,  _ = estimate_rail_fare(1000, 1)
+        assert via_one == direct + 15
+
+    def test_estimate_rail_fare_carbon_dramatically_lower_than_air(self):
+        """Rail CO₂ must be at least 10× lower than air for the same distance."""
+        dist = 500
+        _, air_carbon  = estimate_fare(dist, 1)
+        _, rail_carbon = estimate_rail_fare(dist, 0)
+        assert rail_carbon < air_carbon / 10, (
+            f"Rail carbon {rail_carbon:.1f} kg should be ≥10× lower than "
+            f"air carbon {air_carbon:.1f} kg"
+        )
+
+    def test_estimate_rail_fare_price_increases_with_distance(self):
+        p1, _ = estimate_rail_fare(200, 0)
+        p2, _ = estimate_rail_fare(600, 0)
+        p3, _ = estimate_rail_fare(1200, 0)
+        assert p1 < p2 < p3
+
+    # ── dijkstra_rail_all ─────────────────────────────────────────────────────
+
+    def test_dijkstra_rail_all_london_to_paris_direct(self):
+        result = dijkstra_rail_all('GBLON')
+        assert 'FRPAR' in result
+        hops, dist = result['FRPAR']
+        assert hops == 1
+        assert 400 < dist < 600   # ~493 km
+
+    def test_dijkstra_rail_all_london_to_amsterdam_direct(self):
+        result = dijkstra_rail_all('GBLON')
+        # GBLON → BEBRU → NLAMS  (no direct GBLON–NLAMS edge, but 2-hop route exists)
+        # OR direct via Eurostar to Amsterdam — check edge list
+        # GBLON has direct edges only to FRPAR and BEBRU; NLAMS is 2 hops
+        assert 'NLAMS' in result
+        hops, dist = result['NLAMS']
+        assert hops == 2
+        assert 550 < dist < 900
+
+    def test_dijkstra_rail_all_london_to_frankfurt_multi_hop(self):
+        result = dijkstra_rail_all('GBLON')
+        # Shortest 2-hop: GBLON→BEBRU (370) + BEBRU→DEFRA (496) = 866 km
+        # (slightly shorter than GBLON→FRPAR→DEFRA = 1072 km)
+        assert 'DEFRA' in result
+        hops, dist = result['DEFRA']
+        assert hops == 2
+        assert 800 < dist < 1100
+
+    def test_dijkstra_rail_all_from_unknown_station_returns_empty(self):
+        result = dijkstra_rail_all('ZZZZ')
+        assert result == {}
+
+    def test_dijkstra_rail_all_returns_self_at_zero(self):
+        result = dijkstra_rail_all('FRPAR')
+        assert result['FRPAR'] == (0, 0.0)
+
+    # ── find_best_rail_route ──────────────────────────────────────────────────
+
+    def test_find_best_rail_route_london_to_paris(self):
+        path, hops, dist = find_best_rail_route('LHR', 'CDG')
+        assert path is not None
+        assert hops == 1
+        assert 400 < dist < 600
+
+    def test_find_best_rail_route_returns_path_tuples(self):
+        """Each path element must be (src, dst, dist_km, operator)."""
+        path, hops, dist = find_best_rail_route('LHR', 'CDG')
+        assert path is not None
+        assert len(path) == hops
+        for leg in path:
+            assert len(leg) == 4
+            rail_src, rail_dst, leg_dist, operator = leg
+            assert rail_src in RAIL_STATIONS
+            assert rail_dst in RAIL_STATIONS
+            assert leg_dist > 0
+            assert isinstance(operator, str) and operator
+
+    def test_find_best_rail_route_no_rail_for_non_european(self):
+        """Sydney has no rail station — result must be (None, None, None)."""
+        path, hops, dist = find_best_rail_route('SYD', 'LHR')
+        assert path is None and hops is None and dist is None
+
+    def test_find_best_rail_route_same_city_returns_none(self):
+        """LHR and LGW are both GBLON — no rail 'route' needed."""
+        path, hops, dist = find_best_rail_route('LHR', 'LGW')
+        assert path is None
+
+    def test_find_best_rail_route_vienna_to_budapest(self):
+        """VIE → BUD: direct Railjet, ~243 km."""
+        path, hops, dist = find_best_rail_route('VIE', 'BUD')
+        assert path is not None
+        assert hops == 1
+        assert 200 < dist < 300
+
+    def test_find_best_rail_route_path_is_contiguous(self):
+        """Each leg's dst must equal the next leg's src."""
+        path, _, _ = find_best_rail_route('LHR', 'FRA')
+        assert path is not None and len(path) > 1
+        for i in range(len(path) - 1):
+            _, dst_this, _, _ = path[i]
+            src_next, _, _, _ = path[i + 1]
+            assert dst_this == src_next, \
+                f"Rail path gap: leg {i} ends at {dst_this}, leg {i+1} starts at {src_next}"
+
+    # ── API integration ───────────────────────────────────────────────────────
+
+    def test_rail_legs_have_mode_field(self, client):
+        """When a rail route is chosen, every leg must carry mode='rail'."""
+        # Brussels → Paris: direct Thalys, rail should win on price
+        payload = {
+            "attendees": [{"city": "Brussels", "iatas": ["BRU"], "count": 1}],
+            "dest_iata": "CDG",
+        }
+        res   = client.post("/api/get_routes", json=payload)
+        route = res.get_json()["routes"][0]
+        assert res.status_code == 200
+        if route.get("mode") == "rail":
+            assert all(leg["mode"] == "rail" for leg in route["legs"]), \
+                "All legs on a rail route must have mode='rail'"
+
+    def test_air_legs_have_mode_field(self, client):
+        """Air legs must carry mode='air' — even after the rail refactor."""
+        payload = {
+            "attendees": [{"city": "Sydney", "iatas": ["SYD"], "count": 1}],
+            "dest_iata": "LHR",
+        }
+        res   = client.post("/api/get_routes", json=payload)
+        route = res.get_json()["routes"][0]
+        assert res.status_code == 200
+        assert route.get("mode") == "air"
+        assert all(leg["mode"] == "air" for leg in route["legs"])
+
+    def test_route_result_always_has_mode_field(self, client):
+        """Every non-home route result must include a 'mode' key."""
+        payload = {
+            "attendees": [
+                {"city": "London",   "iatas": ["LHR"], "count": 1},
+                {"city": "New York", "iatas": ["JFK"], "count": 1},
+            ],
+            "dest_iata": "CDG",
+        }
+        res  = client.post("/api/get_routes", json=payload)
+        data = res.get_json()
+        for route in data["routes"]:
+            if not route.get("home"):
+                assert "mode" in route, f"Missing 'mode' on route: {route}"
+
+    def test_rail_carbon_lower_than_air_for_same_city_pair(self, client):
+        """
+        For a London → Brussels journey, if rail is chosen, the per-person
+        carbon estimate must be much lower than a typical short-haul air figure.
+        """
+        payload = {
+            "attendees": [{"city": "London", "iatas": ["LHR"], "count": 1}],
+            "dest_iata": "BRU",
+        }
+        res   = client.post("/api/get_routes", json=payload)
+        route = res.get_json()["routes"][0]
+        assert res.status_code == 200
+        if route.get("mode") == "rail":
+            # Round-trip rail carbon for ~370 km: 370 * 0.006 * 2 ≈ 4.4 kg
+            # Short-haul air for ~320 km: 320 * 0.17 * 2 ≈ 109 kg
+            assert route["est_carbon_person"] < 20, (
+                f"Rail carbon {route['est_carbon_person']} kg seems too high for Brussels"
+            )
+
+    def test_destination_ranking_uses_rail_for_short_european_legs(self, client):
+        """
+        When all attendees are in European cities well-connected by rail,
+        the carbon estimates should reflect rail factors (much lower) for
+        destinations within the rail network.
+        """
+        payload = {
+            "attendees": [
+                {"city": "Brussels", "iatas": ["BRU"], "count": 2},
+                {"city": "Amsterdam", "iatas": ["AMS"], "count": 2},
+            ]
+        }
+        res  = client.post("/api/find_destinations", json=payload)
+        data = res.get_json()
+        assert res.status_code == 200
+        overall = data["overall"]
+        assert len(overall) > 0
+        # Carbon for European intra-rail destinations should be much lower than
+        # long-haul flights — at least one result with very low carbon
+        carbons = [d["est_carbon"] for d in overall if d["est_carbon"] is not None]
+        assert min(carbons) < 100, (
+            f"Expected at least one low-carbon destination via rail; min was {min(carbons)} kg"
+        )

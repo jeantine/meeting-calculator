@@ -510,6 +510,7 @@
   .dest-stats .em { color: var(--text); }
 
   .legs-list { padding: 0.5rem 1.2rem 0.8rem; background: var(--surface); }
+  .leg-row.leg-rail { background: var(--green-bg); }
   .leg-row {
     display: flex;
     align-items: center;
@@ -1317,23 +1318,32 @@ async function selectDest(iata, row) {
         </div>
       </div>`;
 
-    const legs = r.legs.map(l => `
-      <div class="leg-row">
-        <span class="leg-iatas">${l.src} <span class="leg-arrow">→</span> ${l.dst}</span>
-        <span class="leg-cities">${l.src_city} → ${l.dst_city}</span>
+    const legs = r.legs.map(l => {
+      const isRail = l.mode === 'rail';
+      const modeIcon = isRail ? '🚂' : '✈';
+      const srcLabel = isRail ? l.src_city : l.src;
+      const dstLabel = isRail ? l.dst_city : l.dst;
+      return `
+      <div class="leg-row${isRail ? ' leg-rail' : ''}">
+        <span class="leg-iatas">${modeIcon} ${srcLabel} <span class="leg-arrow">→</span> ${dstLabel}</span>
+        <span class="leg-cities">${isRail ? (l.src_name + ' → ' + l.dst_name) : (l.src_city + ' → ' + l.dst_city)}</span>
         <span class="leg-airline" title="${l.airline_name || l.airline}">${l.airline}</span>
         <span class="leg-dist">${l.dist_km.toLocaleString()} km</span>
-      </div>`).join('');
+      </div>`;
+    }).join('');
 
     const estBadge = r.est_price_person
       ? `<span class="att-badge cost">est. US$${r.est_price_person.toLocaleString()}/person · 🌿 ${r.est_carbon_person} kg CO₂</span>`
       : '';
+    const hopLabel = r.mode === 'rail'
+      ? `${r.hops} train leg${r.hops>1?'s':''}`
+      : `${r.hops} flight${r.hops>1?'s':''}`;
     return `
       <div class="attendee-route-block">
         <div class="attendee-route-header">
           <span class="att-city">${r.city}</span>
           ${estBadge}
-          <span class="att-badge dist">${r.hops} flight${r.hops>1?'s':''} · ${r.dist_km.toLocaleString()} km</span>
+          <span class="att-badge dist">${hopLabel} · ${r.dist_km.toLocaleString()} km</span>
           <span class="att-badge dist">${r.count} traveller${r.count>1?'s':''}</span>
         </div>
         <div class="legs-list">${legs}</div>
