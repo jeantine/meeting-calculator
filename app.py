@@ -414,17 +414,17 @@ def find_meeting_destinations(attendees, top_n=10, continent_filter=None):
         best_score = (math.inf, math.inf, math.inf, math.inf)
         for iata in a['iatas']:
             score = candidate_scores.get(iata, (math.inf, math.inf, math.inf, math.inf))
-            if (score[0], score[3]) < (best_score[0], best_score[3]):
+            if (score[0], score[2], score[3]) < (best_score[0], best_score[2], best_score[3]):
                 best_score = score
                 best_iata  = iata
         if best_iata and best_score[0] < math.inf:
             city = a['city']
-            if city not in home_scores or (best_score[0], best_score[3]) < (home_scores[city][1][0], home_scores[city][1][3]):
+            if city not in home_scores or (best_score[0], best_score[2], best_score[3]) < (home_scores[city][1][0], home_scores[city][1][2], home_scores[city][1][3]):
                 home_scores[city] = (best_iata, best_score, a['count'])
 
     ranked_home = []
     for city, (iata, scores, local_count) in sorted(
-            home_scores.items(), key=lambda x: (x[1][1][0], x[1][1][3])):
+            home_scores.items(), key=lambda x: (x[1][1][0], x[1][1][2], x[1][1][3])):
         info = AIRPORTS.get(iata, {})
         total_hops, total_dist, total_price, total_carbon = scores
         ranked_home.append({
