@@ -175,7 +175,7 @@ total_cost    = Σ group_cost    (all attendee groups)
 total_carbon  = Σ group_carbon  (all attendee groups)
 ```
 
-Results are sorted by **fewest total flights** first, then **lowest total carbon** as a tie-breaker. Cost is shown in the table but is not used for the primary sort.
+Results are sorted by **fewest total flights** first, then **lowest estimated cost** as the first tie-breaker, then **lowest total carbon** as the final tie-breaker. The same ordering applies to the Attendee Home Cities tab.
 
 ### Route detail panel (`/api/get_routes`)
 
