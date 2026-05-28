@@ -199,6 +199,13 @@ RAIL_STATIONS = {
     'GBMAN': {'name': 'Manchester Piccadilly','city': 'Manchester',   'country': 'United Kingdom'},
     'GBBHM': {'name': 'Birmingham New St',    'city': 'Birmingham',   'country': 'United Kingdom'},
     'GBBRS': {'name': 'Bristol Temple Meads', 'city': 'Bristol',      'country': 'United Kingdom'},
+    'GBLED': {'name': 'Leeds',                'city': 'Leeds',         'country': 'United Kingdom'},
+    'GBNEW': {'name': 'Newcastle',            'city': 'Newcastle',     'country': 'United Kingdom'},
+    'GBLIV': {'name': 'Liverpool Lime St',    'city': 'Liverpool',     'country': 'United Kingdom'},
+    'GBSHE': {'name': 'Sheffield',            'city': 'Sheffield',     'country': 'United Kingdom'},
+    'GBNOT': {'name': 'Nottingham',           'city': 'Nottingham',    'country': 'United Kingdom'},
+    'GBCDF': {'name': 'Cardiff Central',      'city': 'Cardiff',       'country': 'United Kingdom'},
+    'GBOXF': {'name': 'Oxford',               'city': 'Oxford',        'country': 'United Kingdom'},
     # ── France ──────────────────────────────────────────────────────────────
     'FRPAR': {'name': 'Paris Gare du Nord',   'city': 'Paris',        'country': 'France'},
     'FRLYS': {'name': 'Lyon Part-Dieu',       'city': 'Lyon',         'country': 'France'},
@@ -279,114 +286,229 @@ RAIL_STATIONS = {
     'LTVNO': {'name': 'Vilnius',              'city': 'Vilnius',      'country': 'Lithuania'},
 }
 
-# Airport IATA → nearest rail station (same metro area)
-AIRPORT_TO_RAIL = {
+# City → transport options.  Each entry lists the IATA airports that serve
+# the city and the rail station code (same as the RAIL_STATIONS key).
+# Cities without airports (e.g. Sheffield, Oxford) have airports=[].
+# This is the single source of truth; IATA_TO_CITY and STATION_TO_IATAS
+# are derived from it at startup.
+CITIES = {
     # ── United Kingdom ──────────────────────────────────────────────────────
-    'LHR': 'GBLON', 'LGW': 'GBLON', 'STN': 'GBLON', 'LTN': 'GBLON', 'LCY': 'GBLON',
-    'EDI': 'GBEDB',
-    'GLA': 'GBGLA',
-    'MAN': 'GBMAN',
-    'BHX': 'GBBHM',
-    'BRS': 'GBBRS',
+    'GBLON': {'name': 'London',     'country': 'United Kingdom',
+              'airports': ['LHR', 'LGW', 'STN', 'LTN', 'LCY'], 'rail': 'GBLON'},
+    'GBEDB': {'name': 'Edinburgh',  'country': 'United Kingdom',
+              'airports': ['EDI'],  'rail': 'GBEDB'},
+    'GBGLA': {'name': 'Glasgow',    'country': 'United Kingdom',
+              'airports': ['GLA'],  'rail': 'GBGLA'},
+    'GBMAN': {'name': 'Manchester', 'country': 'United Kingdom',
+              'airports': ['MAN'],  'rail': 'GBMAN'},
+    'GBBHM': {'name': 'Birmingham', 'country': 'United Kingdom',
+              'airports': ['BHX'],  'rail': 'GBBHM'},
+    'GBBRS': {'name': 'Bristol',    'country': 'United Kingdom',
+              'airports': ['BRS'],  'rail': 'GBBRS'},
+    'GBLED': {'name': 'Leeds',      'country': 'United Kingdom',
+              'airports': ['LBA'],  'rail': 'GBLED'},
+    'GBNEW': {'name': 'Newcastle',  'country': 'United Kingdom',
+              'airports': ['NCL'],  'rail': 'GBNEW'},
+    'GBLIV': {'name': 'Liverpool',  'country': 'United Kingdom',
+              'airports': ['LPL'],  'rail': 'GBLIV'},
+    'GBSHE': {'name': 'Sheffield',  'country': 'United Kingdom',
+              'airports': [],       'rail': 'GBSHE'},
+    'GBNOT': {'name': 'Nottingham', 'country': 'United Kingdom',
+              'airports': ['EMA'],  'rail': 'GBNOT'},
+    'GBCDF': {'name': 'Cardiff',    'country': 'United Kingdom',
+              'airports': ['CWL'],  'rail': 'GBCDF'},
+    'GBOXF': {'name': 'Oxford',     'country': 'United Kingdom',
+              'airports': [],       'rail': 'GBOXF'},
     # ── France ──────────────────────────────────────────────────────────────
-    'CDG': 'FRPAR', 'ORY': 'FRPAR',
-    'LYS': 'FRLYS',
-    'MRS': 'FRMRS',
-    'NCE': 'FRNIC',
-    'BOD': 'FRBOD',
-    'TLS': 'FRTLS',
-    'SXB': 'FRSXB',
-    'NTE': 'FRNTE',
+    'FRPAR': {'name': 'Paris',      'country': 'France',
+              'airports': ['CDG', 'ORY'], 'rail': 'FRPAR'},
+    'FRLYS': {'name': 'Lyon',       'country': 'France',
+              'airports': ['LYS'],  'rail': 'FRLYS'},
+    'FRMRS': {'name': 'Marseille',  'country': 'France',
+              'airports': ['MRS'],  'rail': 'FRMRS'},
+    'FRNIC': {'name': 'Nice',       'country': 'France',
+              'airports': ['NCE'],  'rail': 'FRNIC'},
+    'FRBOD': {'name': 'Bordeaux',   'country': 'France',
+              'airports': ['BOD'],  'rail': 'FRBOD'},
+    'FRTLS': {'name': 'Toulouse',   'country': 'France',
+              'airports': ['TLS'],  'rail': 'FRTLS'},
+    'FRSXB': {'name': 'Strasbourg', 'country': 'France',
+              'airports': ['SXB'],  'rail': 'FRSXB'},
+    'FRNTE': {'name': 'Nantes',     'country': 'France',
+              'airports': ['NTE'],  'rail': 'FRNTE'},
     # ── Belgium / Netherlands ───────────────────────────────────────────────
-    'BRU': 'BEBRU',
-    'AMS': 'NLAMS',
-    'RTM': 'NLRTM',
+    'BEBRU': {'name': 'Brussels',   'country': 'Belgium',
+              'airports': ['BRU'],  'rail': 'BEBRU'},
+    'NLAMS': {'name': 'Amsterdam',  'country': 'Netherlands',
+              'airports': ['AMS'],  'rail': 'NLAMS'},
+    'NLRTM': {'name': 'Rotterdam',  'country': 'Netherlands',
+              'airports': ['RTM'],  'rail': 'NLRTM'},
     # ── Germany ─────────────────────────────────────────────────────────────
-    'FRA': 'DEFRA',
-    'BER': 'DEBER', 'TXL': 'DEBER',
-    'MUC': 'DEMUC',
-    'HAM': 'DEHAM',
-    'CGN': 'DECGN',
-    'STR': 'DESTT',
-    'DUS': 'DEDUS',
-    'NUE': 'DENUR',
-    'HAJ': 'DEHAN',
+    'DEFRA': {'name': 'Frankfurt',  'country': 'Germany',
+              'airports': ['FRA'],  'rail': 'DEFRA'},
+    'DEBER': {'name': 'Berlin',     'country': 'Germany',
+              'airports': ['BER', 'TXL'], 'rail': 'DEBER'},
+    'DEMUC': {'name': 'Munich',     'country': 'Germany',
+              'airports': ['MUC'],  'rail': 'DEMUC'},
+    'DEHAM': {'name': 'Hamburg',    'country': 'Germany',
+              'airports': ['HAM'],  'rail': 'DEHAM'},
+    'DECGN': {'name': 'Cologne',    'country': 'Germany',
+              'airports': ['CGN'],  'rail': 'DECGN'},
+    'DESTT': {'name': 'Stuttgart',  'country': 'Germany',
+              'airports': ['STR'],  'rail': 'DESTT'},
+    'DEDUS': {'name': 'Düsseldorf', 'country': 'Germany',
+              'airports': ['DUS'],  'rail': 'DEDUS'},
+    'DENUR': {'name': 'Nuremberg',  'country': 'Germany',
+              'airports': ['NUE'],  'rail': 'DENUR'},
+    'DEHAN': {'name': 'Hannover',   'country': 'Germany',
+              'airports': ['HAJ'],  'rail': 'DEHAN'},
     # ── Switzerland ─────────────────────────────────────────────────────────
-    'ZRH': 'CHZRH',
-    'GVA': 'CHGVA',
-    'BSL': 'CHBSL', 'EAP': 'CHBSL', 'MLH': 'CHBSL',
-    'BRN': 'CHBRN',
+    'CHZRH': {'name': 'Zurich',     'country': 'Switzerland',
+              'airports': ['ZRH'],  'rail': 'CHZRH'},
+    'CHGVA': {'name': 'Geneva',     'country': 'Switzerland',
+              'airports': ['GVA'],  'rail': 'CHGVA'},
+    'CHBSL': {'name': 'Basel',      'country': 'Switzerland',
+              'airports': ['BSL', 'EAP', 'MLH'], 'rail': 'CHBSL'},
+    'CHBRN': {'name': 'Bern',       'country': 'Switzerland',
+              'airports': ['BRN'],  'rail': 'CHBRN'},
     # ── Austria ─────────────────────────────────────────────────────────────
-    'VIE': 'ATVIE',
-    'SZG': 'ATSBG',
-    'GRZ': 'ATGRZ',
+    'ATVIE': {'name': 'Vienna',     'country': 'Austria',
+              'airports': ['VIE'],  'rail': 'ATVIE'},
+    'ATSBG': {'name': 'Salzburg',   'country': 'Austria',
+              'airports': ['SZG'],  'rail': 'ATSBG'},
+    'ATGRZ': {'name': 'Graz',       'country': 'Austria',
+              'airports': ['GRZ'],  'rail': 'ATGRZ'},
     # ── Italy ───────────────────────────────────────────────────────────────
-    'MXP': 'ITMIL', 'LIN': 'ITMIL',
-    'FCO': 'ITROM', 'CIA': 'ITROM',
-    'TRN': 'ITTRN',
-    'FLR': 'ITFLO',
-    'VCE': 'ITVCE', 'TSF': 'ITVCE',
-    'NAP': 'ITNAP',
-    'BLQ': 'ITBLN',
+    'ITMIL': {'name': 'Milan',      'country': 'Italy',
+              'airports': ['MXP', 'LIN'], 'rail': 'ITMIL'},
+    'ITROM': {'name': 'Rome',       'country': 'Italy',
+              'airports': ['FCO', 'CIA'], 'rail': 'ITROM'},
+    'ITTRN': {'name': 'Turin',      'country': 'Italy',
+              'airports': ['TRN'],  'rail': 'ITTRN'},
+    'ITFLO': {'name': 'Florence',   'country': 'Italy',
+              'airports': ['FLR'],  'rail': 'ITFLO'},
+    'ITVCE': {'name': 'Venice',     'country': 'Italy',
+              'airports': ['VCE', 'TSF'], 'rail': 'ITVCE'},
+    'ITNAP': {'name': 'Naples',     'country': 'Italy',
+              'airports': ['NAP'],  'rail': 'ITNAP'},
+    'ITBLN': {'name': 'Bologna',    'country': 'Italy',
+              'airports': ['BLQ'],  'rail': 'ITBLN'},
     # ── Spain / Portugal ────────────────────────────────────────────────────
-    'MAD': 'ESMAD',
-    'BCN': 'ESBCN',
-    'SVQ': 'ESSVQ',
-    'VLC': 'ESVLC',
-    'AGP': 'ESMLG',
-    'LIS': 'PTLIS',
-    'OPO': 'PTOPO',
+    'ESMAD': {'name': 'Madrid',     'country': 'Spain',
+              'airports': ['MAD'],  'rail': 'ESMAD'},
+    'ESBCN': {'name': 'Barcelona',  'country': 'Spain',
+              'airports': ['BCN'],  'rail': 'ESBCN'},
+    'ESSVQ': {'name': 'Seville',    'country': 'Spain',
+              'airports': ['SVQ'],  'rail': 'ESSVQ'},
+    'ESVLC': {'name': 'Valencia',   'country': 'Spain',
+              'airports': ['VLC'],  'rail': 'ESVLC'},
+    'ESMLG': {'name': 'Málaga',     'country': 'Spain',
+              'airports': ['AGP'],  'rail': 'ESMLG'},
+    'PTLIS': {'name': 'Lisbon',     'country': 'Portugal',
+              'airports': ['LIS'],  'rail': 'PTLIS'},
+    'PTOPO': {'name': 'Porto',      'country': 'Portugal',
+              'airports': ['OPO'],  'rail': 'PTOPO'},
     # ── Czech Republic / Slovakia ────────────────────────────────────────────
-    'PRG': 'CZPRG',
-    'BRQ': 'CZBRQ',
-    'BTS': 'SKBTS',
+    'CZPRG': {'name': 'Prague',     'country': 'Czech Republic',
+              'airports': ['PRG'],  'rail': 'CZPRG'},
+    'CZBRQ': {'name': 'Brno',       'country': 'Czech Republic',
+              'airports': ['BRQ'],  'rail': 'CZBRQ'},
+    'SKBTS': {'name': 'Bratislava', 'country': 'Slovakia',
+              'airports': ['BTS'],  'rail': 'SKBTS'},
     # ── Hungary / Romania ────────────────────────────────────────────────────
-    'BUD': 'HUBUD',
-    'OTP': 'ROBUH', 'BBU': 'ROBUH',
+    'HUBUD': {'name': 'Budapest',   'country': 'Hungary',
+              'airports': ['BUD'],  'rail': 'HUBUD'},
+    'ROBUH': {'name': 'Bucharest',  'country': 'Romania',
+              'airports': ['OTP', 'BBU'], 'rail': 'ROBUH'},
     # ── Poland ──────────────────────────────────────────────────────────────
-    'WAW': 'PLWAW',
-    'KRK': 'PLKRK',
-    'WRO': 'PLWRO',
-    'GDN': 'PLGDN',
+    'PLWAW': {'name': 'Warsaw',     'country': 'Poland',
+              'airports': ['WAW'],  'rail': 'PLWAW'},
+    'PLKRK': {'name': 'Kraków',     'country': 'Poland',
+              'airports': ['KRK'],  'rail': 'PLKRK'},
+    'PLWRO': {'name': 'Wrocław',    'country': 'Poland',
+              'airports': ['WRO'],  'rail': 'PLWRO'},
+    'PLGDN': {'name': 'Gdańsk',     'country': 'Poland',
+              'airports': ['GDN'],  'rail': 'PLGDN'},
     # ── Western Balkans / Southeast Europe ──────────────────────────────────
-    'LJU': 'SILJB',
-    'ZAG': 'HRZAG',
-    'BEG': 'RSBEG',
-    'SOF': 'BGSFP',
-    'SKG': 'GRTHE',
-    'ATH': 'GRATH',
-    'IST': 'TRIST', 'SAW': 'TRIST',
+    'SILJB': {'name': 'Ljubljana',   'country': 'Slovenia',
+              'airports': ['LJU'],  'rail': 'SILJB'},
+    'HRZAG': {'name': 'Zagreb',      'country': 'Croatia',
+              'airports': ['ZAG'],  'rail': 'HRZAG'},
+    'RSBEG': {'name': 'Belgrade',    'country': 'Serbia',
+              'airports': ['BEG'],  'rail': 'RSBEG'},
+    'BGSFP': {'name': 'Sofia',       'country': 'Bulgaria',
+              'airports': ['SOF'],  'rail': 'BGSFP'},
+    'GRTHE': {'name': 'Thessaloniki','country': 'Greece',
+              'airports': ['SKG'],  'rail': 'GRTHE'},
+    'GRATH': {'name': 'Athens',      'country': 'Greece',
+              'airports': ['ATH'],  'rail': 'GRATH'},
+    'TRIST': {'name': 'Istanbul',    'country': 'Turkey',
+              'airports': ['IST', 'SAW'], 'rail': 'TRIST'},
     # ── Scandinavia ─────────────────────────────────────────────────────────
-    'ARN': 'SESTO', 'NYO': 'SESTO',
-    'GOT': 'SEGOT',
-    'MMX': 'SEMAL',
-    'CPH': 'DKCPH',
-    'OSL': 'NOOSL',
+    'SESTO': {'name': 'Stockholm',  'country': 'Sweden',
+              'airports': ['ARN', 'NYO'], 'rail': 'SESTO'},
+    'SEGOT': {'name': 'Gothenburg', 'country': 'Sweden',
+              'airports': ['GOT'],  'rail': 'SEGOT'},
+    'SEMAL': {'name': 'Malmö',      'country': 'Sweden',
+              'airports': ['MMX'],  'rail': 'SEMAL'},
+    'DKCPH': {'name': 'Copenhagen', 'country': 'Denmark',
+              'airports': ['CPH'],  'rail': 'DKCPH'},
+    'NOOSL': {'name': 'Oslo',       'country': 'Norway',
+              'airports': ['OSL'],  'rail': 'NOOSL'},
     # ── Baltic ──────────────────────────────────────────────────────────────
-    'TLL': 'EETAL',
-    'RIX': 'LVRIX',
-    'VNO': 'LTVNO',
+    'EETAL': {'name': 'Tallinn',    'country': 'Estonia',
+              'airports': ['TLL'],  'rail': 'EETAL'},
+    'LVRIX': {'name': 'Riga',       'country': 'Latvia',
+              'airports': ['RIX'],  'rail': 'LVRIX'},
+    'LTVNO': {'name': 'Vilnius',    'country': 'Lithuania',
+              'airports': ['VNO'],  'rail': 'LTVNO'},
 }
 
-# Reverse lookup: rail station → list of served airport IATAs
-RAIL_TO_AIRPORTS = defaultdict(list)
-for _iata, _rail in AIRPORT_TO_RAIL.items():
-    RAIL_TO_AIRPORTS[_rail].append(_iata)
+# Reverse lookups derived from CITIES at startup
+IATA_TO_CITY    = {}                    # IATA  → city_code
+STATION_TO_IATAS = defaultdict(list)   # rail station → [airport IATAs]
+for _city_code, _cinfo in CITIES.items():
+    for _iata in _cinfo['airports']:
+        IATA_TO_CITY[_iata] = _city_code
+    if _cinfo['rail']:
+        STATION_TO_IATAS[_cinfo['rail']].extend(_cinfo['airports'])
 
 # High-speed and main-line rail connections (bidirectional, distances in km).
 # Covers the Interrail network across the UK and Europe.
 _RAIL_EDGES = [
-    # ── UK internal (West Coast, East Coast, Great Western Main Lines) ──────
+    # ── UK internal (West Coast, East Coast, Great Western, Midland Main Lines)
     ('GBLON', 'GBBHM',  180, 'Avanti/CrossCountry'),
     ('GBLON', 'GBMAN',  295, 'Avanti West Coast'),
     ('GBLON', 'GBBRS',  190, 'GWR'),
     ('GBLON', 'GBEDB',  630, 'LNER'),
     ('GBLON', 'GBGLA',  645, 'Avanti West Coast'),
+    ('GBLON', 'GBLED',  310, 'LNER'),
+    ('GBLON', 'GBNEW',  445, 'LNER'),
+    ('GBLON', 'GBLIV',  320, 'Avanti West Coast'),
+    ('GBLON', 'GBSHE',  255, 'EMR'),
+    ('GBLON', 'GBNOT',  205, 'EMR'),
+    ('GBLON', 'GBCDF',  250, 'GWR'),
+    ('GBLON', 'GBOXF',  100, 'GWR/Chiltern'),
     ('GBBHM', 'GBMAN',  130, 'Avanti/Transpennine'),
     ('GBBHM', 'GBEDB',  450, 'CrossCountry'),
+    ('GBBHM', 'GBLIV',  130, 'Avanti/CrossCountry'),
+    ('GBBHM', 'GBSHE',  115, 'CrossCountry'),
+    ('GBBHM', 'GBNOT',   80, 'CrossCountry'),
+    ('GBBHM', 'GBOXF',  130, 'Chiltern'),
     ('GBMAN', 'GBEDB',  335, 'Transpennine/LNER'),
     ('GBMAN', 'GBGLA',  345, 'Avanti West Coast'),
+    ('GBMAN', 'GBLED',   70, 'Transpennine'),
+    ('GBMAN', 'GBNEW',  230, 'Transpennine'),
+    ('GBMAN', 'GBLIV',   56, 'Northern/Avanti'),
+    ('GBMAN', 'GBSHE',   55, 'Transpennine'),
     ('GBEDB', 'GBGLA',   75, 'ScotRail'),
+    ('GBLED', 'GBNEW',  150, 'LNER'),
+    ('GBLED', 'GBSHE',   60, 'Transpennine/EMR'),
+    ('GBLED', 'GBEDB',  310, 'LNER'),
+    ('GBNEW', 'GBEDB',  190, 'LNER'),
+    ('GBSHE', 'GBNOT',   50, 'EMR'),
+    ('GBCDF', 'GBBRS',   65, 'GWR'),
+    ('GBOXF', 'GBBRS',  140, 'GWR'),
     # ── Channel Tunnel ───────────────────────────────────────────────────────
     ('GBLON', 'FRPAR',  493, 'Eurostar'),
     ('GBLON', 'BEBRU',  370, 'Eurostar'),
@@ -585,36 +707,84 @@ if os.path.exists(AIRLINES_FILE):
 # ---------------------------------------------------------------------------
 
 def find_airports_by_city(query):
+    """
+    Search for cities by name.  CITIES (rail-capable European cities) are
+    checked first so that rail-only cities (Sheffield, Oxford …) surface even
+    though they have no entry in the airports CSV.  Non-European cities fall
+    back to the AIRPORTS dict as before.
+
+    Every result carries a 'rail' field (station code or None) and a
+    'city_code' field (CITIES key or None) so callers can persist both the
+    airports and the rail station for an attendee.
+    """
     q = query.strip().lower()
+    results = []
+    seen_locations = set()
+
+    # ── 1. Search CITIES (European rail network) ─────────────────────────
+    for city_code, cinfo in CITIES.items():
+        if (q not in cinfo['name'].lower()
+                and q not in cinfo['country'].lower()
+                and q != city_code.lower()):
+            continue
+        routable = [i for i in cinfo['airports'] if i in GRAPH and i in MAIN_AIRPORTS]
+        has_rail  = bool(cinfo['rail'] and cinfo['rail'] in RAIL_GRAPH)
+        if not routable and not has_rail:
+            continue
+        location = f"{cinfo['name']}, {cinfo['country']}"
+        if location in seen_locations:
+            continue
+        seen_locations.add(location)
+        continent = 'Europe'
+        if routable:
+            continent = AIRPORTS.get(routable[0], {}).get('continent', 'Europe')
+        results.append({
+            'location':  location,
+            'city_code': city_code,
+            'iatas':     routable,
+            'rail':      cinfo['rail'] if has_rail else None,
+            'continent': continent,
+            'airports':  [{'iata': i, 'name': AIRPORTS.get(i, {}).get('name', i),
+                           'continent': AIRPORTS.get(i, {}).get('continent', 'Europe')}
+                          for i in routable],
+        })
+
+    # ── 2. Fall back to raw AIRPORTS for non-CITIES matches ──────────────
     matches = []
     for iata, info in AIRPORTS.items():
         if q in info['city'].lower() or q in info['country'].lower() or q == iata.lower():
             matches.append((iata, info))
     matches.sort(key=lambda x: (0 if x[1]['city'].lower() == q else 1,
                                  x[1]['city'], x[1]['name']))
-    # Group by city+country, skipping airports with no city name
     groups = {}
     for iata, info in matches:
         if not info['city'].strip():
             continue
         key = f"{info['city']}, {info['country']}"
         groups.setdefault(key, []).append(iata)
-    # Only return cities where at least one airport has actual routes
-    results = []
     for loc, iatas in groups.items():
+        if loc in seen_locations:
+            continue   # already covered by CITIES
         routable = [i for i in iatas if i in GRAPH and i in MAIN_AIRPORTS]
         if not routable:
             continue
+        seen_locations.add(loc)
         results.append({
-            'location': loc,
-            'iatas': routable,
+            'location':  loc,
+            'city_code': None,
+            'iatas':     routable,
+            'rail':      None,
             'continent': AIRPORTS[routable[0]]['continent'],
-            'airports': [{'iata': i, 'name': AIRPORTS[i]['name'],
-                          'continent': AIRPORTS[i]['continent']} for i in routable]
+            'airports':  [{'iata': i, 'name': AIRPORTS[i]['name'],
+                           'continent': AIRPORTS[i]['continent']} for i in routable],
         })
-        if len(results) == 20:
-            break
-    return results
+
+    # Sort: exact name match first, CITIES before non-CITIES
+    results.sort(key=lambda r: (
+        0 if r['location'].split(',')[0].strip().lower() == q else 1,
+        0 if r.get('city_code') else 1,
+    ))
+    return results[:20]
 
 
 def find_best_route(origin, destination):
@@ -663,18 +833,25 @@ def dijkstra_all(origin):
 
 def find_meeting_destinations(attendees, top_n=10, continent_filter=None):
     """
-    attendees:        list of {'city': str, 'iatas': [str], 'count': int}
+    attendees:        list of {'city': str, 'iatas': [str], 'rail': str|None,
+                               'count': int}
     continent_filter: if set (e.g. 'Europe'), only airports on that continent
                       are considered as candidate destinations.
     Returns (ranked, ranked_home)
+
+    Groups are keyed by (iata_tuple, rail_station) so that rail-only cities
+    (empty iatas but a valid rail station) are routed correctly.
     """
     unique_origins = {}
     for a in attendees:
-        key = tuple(sorted(a['iatas']))
+        iata_key = tuple(sorted(a.get('iatas', [])))
+        rail_key  = a.get('rail')
+        key = (iata_key, rail_key)
         unique_origins.setdefault(key, []).append((a['city'], a['count']))
 
+    # ── Air distance maps ─────────────────────────────────────────────────
     dist_maps = {}
-    for iata_tuple, city_list in unique_origins.items():
+    for (iata_tuple, rail_station), city_list in unique_origins.items():
         merged = {}
         for origin_iata in iata_tuple:
             if origin_iata not in GRAPH:
@@ -683,35 +860,42 @@ def find_meeting_destinations(attendees, top_n=10, continent_filter=None):
             for dest, (h, d) in result.items():
                 cur = merged.get(dest, (math.inf, math.inf, None))
                 if h < cur[0] or (h == cur[0] and d < cur[1]):
-                    merged[dest] = (h, d, origin_iata)   # track best origin
-        dist_maps[iata_tuple] = merged
+                    merged[dest] = (h, d, origin_iata)
+        dist_maps[(iata_tuple, rail_station)] = merged
 
-    # Build European rail distance maps — used to offer a rail alternative
-    # for short intra-European legs where train beats or closely matches air.
+    # ── Rail distance maps ────────────────────────────────────────────────
+    # Uses the rail station attached to each attendee group directly —
+    # no airport-to-rail lookup needed.
     rail_dist_maps = {}
-    for iata_tuple, city_list in unique_origins.items():
+    for (iata_tuple, rail_station), city_list in unique_origins.items():
         merged_rail = {}
-        for origin_iata in iata_tuple:
-            rail_origin = AIRPORT_TO_RAIL.get(origin_iata)
-            if not rail_origin:
-                continue
-            rail_result = dijkstra_rail_all(rail_origin)
+        if rail_station and rail_station in RAIL_GRAPH:
+            rail_result = dijkstra_rail_all(rail_station)
             for rail_dest_station, (rh, rd) in rail_result.items():
-                n_xfr = max(0, rh - 1)  # interchanges = hops − 1
-                for dest_airport in RAIL_TO_AIRPORTS.get(rail_dest_station, []):
+                n_xfr = max(0, rh - 1)
+                for dest_airport in STATION_TO_IATAS.get(rail_dest_station, []):
                     cur = merged_rail.get(dest_airport, (math.inf, math.inf, math.inf, None))
                     if rh < cur[0] or (rh == cur[0] and rd < cur[1]):
-                        merged_rail[dest_airport] = (rh, rd, n_xfr, origin_iata)
-        rail_dist_maps[iata_tuple] = merged_rail
+                        merged_rail[dest_airport] = (rh, rd, n_xfr, rail_station)
+        rail_dist_maps[(iata_tuple, rail_station)] = merged_rail
 
-    all_origin_iatas = set(i for iatas in unique_origins for i in iatas)
+    all_origin_iatas = set(i for (iata_tuple, _) in unique_origins for i in iata_tuple)
 
-    if not dist_maps:
+    if not unique_origins:
         return [], {}
 
-    candidate_pool = set(list(dist_maps.values())[0].keys())
-    for merged in list(dist_maps.values())[1:]:
-        candidate_pool &= set(merged.keys())
+    # Candidate pool = intersection of each group's reachable destinations
+    # (air + rail combined), so rail-only groups are handled correctly.
+    all_reachable = {}
+    for key in unique_origins:
+        all_reachable[key] = set(dist_maps[key].keys()) | set(rail_dist_maps[key].keys())
+
+    reachable_values = list(all_reachable.values())
+    if not reachable_values or not any(reachable_values):
+        return [], {}
+    candidate_pool = reachable_values[0]
+    for v in reachable_values[1:]:
+        candidate_pool = candidate_pool & v
 
     # Add home airports as candidates only if they match the continent filter
     # (or if there is no filter). This means home cities in a different continent
@@ -728,7 +912,6 @@ def find_meeting_destinations(attendees, top_n=10, continent_filter=None):
         log.info("Continent filter '%s': %d candidates (incl. %d home airports on that continent)",
                  continent_filter, len(candidate_pool), len(matching_home_iatas))
     else:
-        # No filter — include all home airports
         candidate_pool |= all_origin_iatas
 
     candidate_scores = {}
@@ -740,26 +923,31 @@ def find_meeting_destinations(attendees, top_n=10, continent_filter=None):
         total_price = 0
         total_carbon= 0.0
         reachable   = True
-        for iata_tuple, city_list in unique_origins.items():
+        for (iata_tuple, rail_station), city_list in unique_origins.items():
             total_count = sum(c for _, c in city_list)
             if dest in iata_tuple:
                 pass  # home city — zero cost, zero distance
             else:
-                cost = dist_maps[iata_tuple].get(dest)
-                if cost is None:
+                air_cost  = dist_maps[(iata_tuple, rail_station)].get(dest)
+                rail_cost = rail_dist_maps[(iata_tuple, rail_station)].get(dest)
+
+                if air_cost is None and rail_cost is None:
                     reachable = False
                     break
-                h, d, best_origin = cost
-                oneway_price, oneway_carbon = estimate_fare(d, h, best_origin, dest)
 
-                # Check whether a direct European rail service is cheaper or
-                # close in price (within 30%).  Multi-hop rail (transfers ≥ 1)
-                # is only preferred when it's outright cheaper than air.
-                rail_cost = rail_dist_maps.get(iata_tuple, {}).get(dest)
+                if air_cost is not None:
+                    h, d, best_origin = air_cost
+                    oneway_price, oneway_carbon = estimate_fare(d, h, best_origin, dest)
+                else:
+                    h, d, oneway_price, oneway_carbon = math.inf, math.inf, math.inf, math.inf
+
+                # Check whether rail is cheaper/close — prefer rail when
+                # direct (1 leg, ≤130% of air) or cheaper for multi-leg.
                 if rail_cost:
                     rh, rd, n_xfr, _ = rail_cost
                     r_price, r_carbon = estimate_rail_fare(rd, n_xfr)
                     prefer_rail = (
+                        air_cost is None or
                         (rh == 1 and r_price <= oneway_price * 1.30) or
                         (rh > 1  and r_price <  oneway_price)
                     )
@@ -808,7 +996,7 @@ def find_meeting_destinations(attendees, top_n=10, continent_filter=None):
     for a in attendees:
         best_iata  = None
         best_score = (math.inf, math.inf, math.inf, math.inf)
-        for iata in a['iatas']:
+        for iata in a.get('iatas', []):
             score = candidate_scores.get(iata, (math.inf, math.inf, math.inf, math.inf))
             if (score[2], score[3]) < (best_score[2], best_score[3]):
                 best_score = score
@@ -855,7 +1043,7 @@ def get_routes_for_destination(attendees, dest_iata):
     """
     results = []
     for a in attendees:
-        if dest_iata in a['iatas']:
+        if dest_iata in a.get('iatas', []):
             results.append({
                 'city':    a['city'],
                 'count':   a['count'],
@@ -869,30 +1057,29 @@ def get_routes_for_destination(attendees, dest_iata):
 
         # ── Best air route ──────────────────────────────────────────────
         best_air_path, best_air_hops, best_air_dist, best_air_origin = None, math.inf, math.inf, None
-        for origin_iata in a['iatas']:
+        for origin_iata in a.get('iatas', []):
             path, hops, dist = find_best_route(origin_iata, dest_iata)
             if path is None:
                 continue
             if hops < best_air_hops or (hops == best_air_hops and dist < best_air_dist):
                 best_air_path, best_air_hops, best_air_dist, best_air_origin = path, hops, dist, origin_iata
 
-        if best_air_path is None:
+        # ── Best rail route (if available) ──────────────────────────────
+        origin_rail = a.get('rail')
+        dest_city   = IATA_TO_CITY.get(dest_iata)
+        dest_rail   = CITIES[dest_city]['rail'] if dest_city else None
+        best_rail_path, best_rail_hops, best_rail_dist = find_best_rail_route(origin_rail, dest_rail)
+
+        # ── No route at all ─────────────────────────────────────────────
+        if best_air_path is None and best_rail_path is None:
             results.append({'city': a['city'], 'count': a['count'],
                             'home': False, 'error': 'No route found', 'legs': []})
             continue
 
-        air_price, air_carbon = estimate_fare(best_air_dist, best_air_hops,
-                                              best_air_origin, dest_iata)
-
-        # ── Best rail route (if available) ──────────────────────────────
-        best_rail_path, best_rail_hops, best_rail_dist, best_rail_origin = None, math.inf, math.inf, None
-        for origin_iata in a['iatas']:
-            rail_path, rail_hops, rail_dist = find_best_rail_route(origin_iata, dest_iata)
-            if rail_path is None:
-                continue
-            if rail_hops < best_rail_hops or (rail_hops == best_rail_hops and rail_dist < best_rail_dist):
-                best_rail_path, best_rail_hops, best_rail_dist, best_rail_origin = \
-                    rail_path, rail_hops, rail_dist, origin_iata
+        air_price = air_carbon = math.inf
+        if best_air_path is not None:
+            air_price, air_carbon = estimate_fare(best_air_dist, best_air_hops,
+                                                  best_air_origin, dest_iata)
 
         # ── Decide mode ─────────────────────────────────────────────────
         use_rail = False
@@ -900,6 +1087,7 @@ def get_routes_for_destination(attendees, dest_iata):
             n_xfr = max(0, best_rail_hops - 1)
             rail_price, rail_carbon = estimate_rail_fare(best_rail_dist, n_xfr)
             prefer_rail = (
+                best_air_path is None or
                 (best_rail_hops == 1 and rail_price <= air_price * 1.30) or
                 (best_rail_hops > 1  and rail_price <  air_price)
             )
@@ -1182,17 +1370,14 @@ def dijkstra_rail_all(origin_station):
     return best
 
 
-def find_best_rail_route(origin_iata, dest_iata):
+def find_best_rail_route(origin_station, dest_station):
     """
-    Find the best rail route between two airports' cities.
+    Find the best rail route between two rail stations.
 
-    Maps each IATA to its rail station via AIRPORT_TO_RAIL, then runs
-    Dijkstra over RAIL_GRAPH.  Returns:
+    Runs Dijkstra over RAIL_GRAPH.  Returns:
       (path, hops, total_dist_km)  — path is a list of (src, dst, dist_km, operator)
       (None, None, None)           — if no rail connection exists
     """
-    origin_station = AIRPORT_TO_RAIL.get(origin_iata)
-    dest_station   = AIRPORT_TO_RAIL.get(dest_iata)
     if not origin_station or not dest_station or origin_station == dest_station:
         return None, None, None
 
@@ -1340,7 +1525,7 @@ def get_live_prices():
     total_carbon = 0.0
 
     for a in attendees:
-        if dest_iata in a['iatas']:
+        if dest_iata in a.get('iatas', []):
             results.append({'city': a['city'], 'count': a['count'],
                             'home': True, 'price_per_person': 0,
                             'total_price': 0, 'carbon_kg_person': 0,
@@ -1348,7 +1533,7 @@ def get_live_prices():
             continue
 
         best_origin, best_hops, best_dist = None, math.inf, math.inf
-        for origin_iata in a['iatas']:
+        for origin_iata in a.get('iatas', []):
             path, hops, dist = find_best_route(origin_iata, dest_iata)
             if path is None: continue
             if hops < best_hops or (hops == best_hops and dist < best_dist):

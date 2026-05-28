@@ -61,8 +61,9 @@ from app import (
     MAIN_AIRPORTS,
     RAIL_STATIONS,
     RAIL_GRAPH,
-    AIRPORT_TO_RAIL,
-    RAIL_TO_AIRPORTS,
+    CITIES,
+    IATA_TO_CITY,
+    STATION_TO_IATAS,
     RAIL_CARBON_FACTOR,
     _carbon_factor,
     app as flask_app,
@@ -2094,20 +2095,42 @@ class TestEuropeanRail:
             for field in ('name', 'city', 'country'):
                 assert field in info, f"Rail station {code} missing field: {field}"
 
-    def test_major_european_airports_mapped_to_rail(self):
-        """Key airports must resolve to a rail station via AIRPORT_TO_RAIL."""
+    def test_cities_airports_contain_major_european_airports(self):
+        """Key airports must appear in CITIES and resolve via IATA_TO_CITY."""
         for iata in ['LHR', 'LGW', 'CDG', 'BRU', 'AMS', 'FRA', 'MUC',
                      'ZRH', 'VIE', 'PRG', 'BUD', 'WAW', 'CPH', 'OSL']:
-            assert iata in AIRPORT_TO_RAIL, f"{iata} not mapped to a rail station"
+            assert iata in IATA_TO_CITY, f"{iata} not mapped to a city"
 
     def test_london_airports_map_to_gblon(self):
         for iata in ['LHR', 'LGW', 'STN', 'LTN', 'LCY']:
-            assert AIRPORT_TO_RAIL.get(iata) == 'GBLON', \
+            assert IATA_TO_CITY.get(iata) == 'GBLON', \
                 f"{iata} should map to GBLON"
+        assert set(CITIES['GBLON']['airports']) >= {'LHR', 'LGW', 'STN', 'LTN', 'LCY'}
 
     def test_paris_airports_map_to_frpar(self):
-        assert AIRPORT_TO_RAIL.get('CDG') == 'FRPAR'
-        assert AIRPORT_TO_RAIL.get('ORY') == 'FRPAR'
+        assert IATA_TO_CITY.get('CDG') == 'FRPAR'
+        assert IATA_TO_CITY.get('ORY') == 'FRPAR'
+        assert set(CITIES['FRPAR']['airports']) >= {'CDG', 'ORY'}
+
+    def test_cities_have_required_fields(self):
+        """Every CITIES entry must have name, country, airports list, and rail."""
+        for code, info in CITIES.items():
+            for field in ('name', 'country', 'airports', 'rail'):
+                assert field in info, f"CITIES[{code}] missing field: {field}"
+            assert isinstance(info['airports'], list)
+
+    def test_rail_only_cities_have_no_airports(self):
+        """Sheffield and Oxford are rail-only — airports list must be empty."""
+        assert CITIES['GBSHE']['airports'] == []
+        assert CITIES['GBOXF']['airports'] == []
+        assert CITIES['GBSHE']['rail'] == 'GBSHE'
+        assert CITIES['GBOXF']['rail'] == 'GBOXF'
+
+    def test_new_uk_cities_in_cities_dict(self):
+        """New UK cities added in the city-centric refactor must be present."""
+        for code in ['GBLED', 'GBNEW', 'GBLIV', 'GBSHE', 'GBNOT', 'GBCDF', 'GBOXF']:
+            assert code in CITIES, f"Missing city: {code}"
+            assert CITIES[code]['rail'] == code
 
     def test_rail_graph_edges_are_bidirectional(self):
         """Every connection must exist in both directions."""
@@ -2116,11 +2139,14 @@ class TestEuropeanRail:
                 reverse = [n for n, d, _ in RAIL_GRAPH.get(dst, []) if n == station]
                 assert reverse, f"Missing reverse edge {dst} → {station}"
 
-    def test_rail_to_airports_reverse_mapping_consistent(self):
-        """RAIL_TO_AIRPORTS must be the exact inverse of AIRPORT_TO_RAIL."""
-        for iata, rail_code in AIRPORT_TO_RAIL.items():
-            assert iata in RAIL_TO_AIRPORTS[rail_code], \
-                f"{iata} → {rail_code} not reflected in RAIL_TO_AIRPORTS"
+    def test_station_to_iatas_is_inverse_of_cities(self):
+        """STATION_TO_IATAS must contain every airport listed in CITIES."""
+        for city_code, cinfo in CITIES.items():
+            rail = cinfo['rail']
+            if rail:
+                for iata in cinfo['airports']:
+                    assert iata in STATION_TO_IATAS[rail], \
+                        f"{iata} in CITIES[{city_code}] not in STATION_TO_IATAS[{rail}]"
 
     def test_rail_carbon_factor_is_low(self):
         """Rail carbon factor must be well below the lowest air factor (0.085)."""
@@ -2199,14 +2225,15 @@ class TestEuropeanRail:
     # ── find_best_rail_route ──────────────────────────────────────────────────
 
     def test_find_best_rail_route_london_to_paris(self):
-        path, hops, dist = find_best_rail_route('LHR', 'CDG')
+        # Now takes station codes directly
+        path, hops, dist = find_best_rail_route('GBLON', 'FRPAR')
         assert path is not None
         assert hops == 1
         assert 400 < dist < 600
 
     def test_find_best_rail_route_returns_path_tuples(self):
         """Each path element must be (src, dst, dist_km, operator)."""
-        path, hops, dist = find_best_rail_route('LHR', 'CDG')
+        path, hops, dist = find_best_rail_route('GBLON', 'FRPAR')
         assert path is not None
         assert len(path) == hops
         for leg in path:
@@ -2219,24 +2246,24 @@ class TestEuropeanRail:
 
     def test_find_best_rail_route_no_rail_for_non_european(self):
         """Sydney has no rail station — result must be (None, None, None)."""
-        path, hops, dist = find_best_rail_route('SYD', 'LHR')
+        path, hops, dist = find_best_rail_route(None, 'GBLON')
         assert path is None and hops is None and dist is None
 
-    def test_find_best_rail_route_same_city_returns_none(self):
-        """LHR and LGW are both GBLON — no rail 'route' needed."""
-        path, hops, dist = find_best_rail_route('LHR', 'LGW')
+    def test_find_best_rail_route_same_station_returns_none(self):
+        """Same origin and destination station returns None."""
+        path, hops, dist = find_best_rail_route('GBLON', 'GBLON')
         assert path is None
 
     def test_find_best_rail_route_vienna_to_budapest(self):
-        """VIE → BUD: direct Railjet, ~243 km."""
-        path, hops, dist = find_best_rail_route('VIE', 'BUD')
+        """ATVIE → HUBUD: direct Railjet, ~243 km."""
+        path, hops, dist = find_best_rail_route('ATVIE', 'HUBUD')
         assert path is not None
         assert hops == 1
         assert 200 < dist < 300
 
     def test_find_best_rail_route_path_is_contiguous(self):
         """Each leg's dst must equal the next leg's src."""
-        path, _, _ = find_best_rail_route('LHR', 'FRA')
+        path, _, _ = find_best_rail_route('GBLON', 'DEFRA')
         assert path is not None and len(path) > 1
         for i in range(len(path) - 1):
             _, dst_this, _, _ = path[i]
@@ -2244,13 +2271,20 @@ class TestEuropeanRail:
             assert dst_this == src_next, \
                 f"Rail path gap: leg {i} ends at {dst_this}, leg {i+1} starts at {src_next}"
 
+    def test_find_best_rail_route_leeds_to_paris(self):
+        """Leeds (rail-only for this purpose) to Paris via London."""
+        path, hops, dist = find_best_rail_route('GBLED', 'FRPAR')
+        assert path is not None
+        assert hops == 2   # Leeds → London → Paris
+        assert 700 < dist < 1000
+
     # ── API integration ───────────────────────────────────────────────────────
 
     def test_rail_legs_have_mode_field(self, client):
         """When a rail route is chosen, every leg must carry mode='rail'."""
         # Brussels → Paris: direct Thalys, rail should win on price
         payload = {
-            "attendees": [{"city": "Brussels", "iatas": ["BRU"], "count": 1}],
+            "attendees": [{"city": "Brussels", "iatas": ["BRU"], "rail": "BEBRU", "count": 1}],
             "dest_iata": "CDG",
         }
         res   = client.post("/api/get_routes", json=payload)
@@ -2263,7 +2297,7 @@ class TestEuropeanRail:
     def test_air_legs_have_mode_field(self, client):
         """Air legs must carry mode='air' — even after the rail refactor."""
         payload = {
-            "attendees": [{"city": "Sydney", "iatas": ["SYD"], "count": 1}],
+            "attendees": [{"city": "Sydney", "iatas": ["SYD"], "rail": None, "count": 1}],
             "dest_iata": "LHR",
         }
         res   = client.post("/api/get_routes", json=payload)
@@ -2276,8 +2310,8 @@ class TestEuropeanRail:
         """Every non-home route result must include a 'mode' key."""
         payload = {
             "attendees": [
-                {"city": "London",   "iatas": ["LHR"], "count": 1},
-                {"city": "New York", "iatas": ["JFK"], "count": 1},
+                {"city": "London",   "iatas": ["LHR"], "rail": "GBLON", "count": 1},
+                {"city": "New York", "iatas": ["JFK"], "rail": None,    "count": 1},
             ],
             "dest_iata": "CDG",
         }
@@ -2293,7 +2327,7 @@ class TestEuropeanRail:
         carbon estimate must be much lower than a typical short-haul air figure.
         """
         payload = {
-            "attendees": [{"city": "London", "iatas": ["LHR"], "count": 1}],
+            "attendees": [{"city": "London", "iatas": ["LHR"], "rail": "GBLON", "count": 1}],
             "dest_iata": "BRU",
         }
         res   = client.post("/api/get_routes", json=payload)
@@ -2314,8 +2348,8 @@ class TestEuropeanRail:
         """
         payload = {
             "attendees": [
-                {"city": "Brussels", "iatas": ["BRU"], "count": 2},
-                {"city": "Amsterdam", "iatas": ["AMS"], "count": 2},
+                {"city": "Brussels",  "iatas": ["BRU"], "rail": "BEBRU", "count": 2},
+                {"city": "Amsterdam", "iatas": ["AMS"], "rail": "NLAMS", "count": 2},
             ]
         }
         res  = client.post("/api/find_destinations", json=payload)
@@ -2323,9 +2357,27 @@ class TestEuropeanRail:
         assert res.status_code == 200
         overall = data["overall"]
         assert len(overall) > 0
-        # Carbon for European intra-rail destinations should be much lower than
-        # long-haul flights — at least one result with very low carbon
         carbons = [d["est_carbon"] for d in overall if d["est_carbon"] is not None]
         assert min(carbons) < 100, (
             f"Expected at least one low-carbon destination via rail; min was {min(carbons)} kg"
         )
+
+    def test_rail_only_attendee_routed_via_rail(self, client):
+        """
+        Sheffield (rail-only, no airport) + London attendee →
+        Sheffield should be routed by rail to a European destination.
+        """
+        payload = {
+            "attendees": [
+                {"city": "Sheffield", "iatas": [],      "rail": "GBSHE", "count": 1},
+                {"city": "London",    "iatas": ["LHR"], "rail": "GBLON", "count": 1},
+            ],
+            "dest_iata": "CDG",
+        }
+        res  = client.post("/api/get_routes", json=payload)
+        data = res.get_json()
+        assert res.status_code == 200
+        sheffield_route = next(r for r in data["routes"] if "Sheffield" in r["city"])
+        # Sheffield can reach Paris via rail (Sheffield→London→Paris)
+        assert sheffield_route.get("mode") == "rail"
+        assert sheffield_route.get("hops", 0) >= 2

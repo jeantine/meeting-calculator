@@ -900,11 +900,11 @@
 
 <script>
 // ── State ──
-let attendees      = [];   // [{city, iatas, count}]
+let attendees      = [];   // [{city, iatas, rail, city_code, count}]
 let selectedIata   = null;
 let focusedIata    = null;
 let focusedRowEl   = null;
-let pendingCity    = null; // {location, iatas}
+let pendingCity    = null; // {location, iatas, rail, city_code}
 let searchTimer    = null;
 let currentResults = null;
 
@@ -983,12 +983,15 @@ async function fetchCities(q) {
   const res  = await fetch(`/api/search_city?q=${encodeURIComponent(q)}`);
   const data = await res.json();
   if (!data.length) { dropdown.style.display = 'none'; return; }
-  dropdown.innerHTML = data.map((item, i) =>
-    `<div class="dropdown-item" data-idx="${i}">
+  dropdown.innerHTML = data.map((item, i) => {
+    const airStr  = item.airports.map(a => `${a.iata} · ${a.name}`).join('  |  ');
+    const railStr = item.rail ? '🚂 rail' : '';
+    const codes   = [airStr, railStr].filter(Boolean).join('  |  ') || 'rail only';
+    return `<div class="dropdown-item" data-idx="${i}">
       <div class="loc">${item.location} <span style="font-size:0.72rem;color:var(--muted)">${item.continent || ''}</span></div>
-      <div class="codes">${item.airports.map(a => `${a.iata} · ${a.name}`).join('  |  ')}</div>
-    </div>`
-  ).join('');
+      <div class="codes">${codes}</div>
+    </div>`;
+  }).join('');
   dropdown._data = data;
   dropdownActiveIdx = -1;
   dropdown.style.display = 'block';
@@ -1012,7 +1015,8 @@ countInput.addEventListener('keydown', e => { if (e.key === 'Enter') addAttendee
 function addAttendee() {
   if (!pendingCity) return;
   const count = Math.max(1, parseInt(countInput.value) || 1);
-  attendees.push({ city: pendingCity.location, iatas: pendingCity.iatas, count });
+  attendees.push({ city: pendingCity.location, iatas: pendingCity.iatas,
+                   rail: pendingCity.rail || null, city_code: pendingCity.city_code || null, count });
   renderAttendees();
   citySearch.value = '';
   countInput.value = '1';
@@ -1035,7 +1039,7 @@ function renderAttendees() {
   attendeeList.innerHTML = attendees.map((a, i) => `
     <div class="attendee-chip">
       <span class="chip-city">${a.city}</span>
-      <span class="chip-iatas">${a.iatas.join(' · ')}</span>
+      <span class="chip-iatas">${a.iatas.length ? a.iatas.join(' · ') + (a.rail ? ' 🚂' : '') : '🚂 rail only'}</span>
       <span class="chip-count" onclick="editAttendeeCount(${i})" title="Click to edit">${a.count} traveller${a.count > 1 ? 's' : ''}</span>
       <button class="btn danger" tabindex="-1" onclick="removeAttendee(${i})">✕</button>
     </div>
