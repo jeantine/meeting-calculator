@@ -162,6 +162,22 @@
     width: 64px;
     text-align: center;
     flex: none;
+    padding: 0.75rem 0.5rem;
+    border: 1px solid var(--border2);
+    border-radius: 10px;
+    background: var(--surface2);
+    font-family: 'Inter', sans-serif;
+    font-size: 0.9rem;
+    color: var(--text);
+    outline: none;
+    transition: border-color .15s, box-shadow .15s;
+    -moz-appearance: textfield;
+  }
+  input.count-input::-webkit-inner-spin-button,
+  input.count-input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+  input.count-input:focus {
+    border-color: var(--green);
+    box-shadow: 0 0 0 3px var(--green-glow);
   }
 
   .dropdown {
@@ -210,6 +226,11 @@
     white-space: nowrap;
   }
   .btn:hover { background: var(--surface2); border-color: var(--green); color: var(--green); }
+  .btn:focus-visible {
+    outline: none;
+    border-color: var(--green);
+    box-shadow: 0 0 0 3px var(--green-glow);
+  }
   .btn.secondary {
     background: transparent;
     color: var(--muted);
@@ -237,6 +258,7 @@
     box-shadow: 0 4px 20px var(--green-glow);
   }
   .btn.go:hover { background: #16a34a; border-color: #16a34a; box-shadow: 0 4px 24px rgba(34,197,94,0.35); }
+  .btn.go:focus-visible { outline: none; box-shadow: 0 4px 20px var(--green-glow), 0 0 0 3px rgba(34,197,94,0.55); }
   .btn:disabled { opacity: 0.35; cursor: not-allowed; box-shadow: none; }
   #addBtn:not(:disabled) {
     background: var(--green);
@@ -246,6 +268,7 @@
     box-shadow: 0 4px 20px var(--green-glow);
   }
   #addBtn:not(:disabled):hover { background: var(--green-dim); border-color: var(--green-dim); }
+  #addBtn:not(:disabled):focus-visible { outline: none; box-shadow: 0 4px 20px var(--green-glow), 0 0 0 3px rgba(34,197,94,0.55); }
 
   /* ── Attendee list ── */
   .attendee-list {
@@ -340,7 +363,8 @@
     background: var(--surface);
     border-radius: 12px;
     border: 1px solid var(--border);
-    overflow: hidden;
+    overflow-x: auto;
+    overflow-y: hidden;
   }
 
   /* ── Destination table ── */
@@ -356,6 +380,11 @@
     border-bottom: 1px solid var(--border);
   }
   .dest-table th.r { text-align: right; }
+  .dest-table th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+  .dest-table th.sortable:hover { color: var(--text); }
+  .dest-table th.sortable .sort-arrow { opacity: 0.35; margin-left: 0.25em; font-size: 0.85em; }
+  .dest-table th.sortable.sort-active { color: var(--text); }
+  .dest-table th.sortable.sort-active .sort-arrow { opacity: 1; }
   .dest-table td {
     padding: 0.8rem 0.9rem;
     border-bottom: 1px solid var(--border);
@@ -445,12 +474,6 @@
     display: flex;
     align-items: center;
     gap: 1rem;
-  }
-  .route-dest-header .big-iata {
-    font-family: 'DM Mono', monospace;
-    font-size: 1.6rem;
-    font-weight: 600;
-    color: var(--green);
   }
   .route-dest-header .dest-info { flex: 1; }
   .route-dest-header .dest-city {
@@ -802,10 +825,11 @@
         <input type="text" id="citySearch" placeholder="Type a city name…" autocomplete="off">
         <div class="dropdown" id="dropdown" style="display:none"></div>
       </div>
-      <input type="text" id="countInput" class="count-input" value="1" placeholder="#" title="Number of attendees">
+      <input type="number" id="countInput" class="count-input" value="1" min="1" max="999" step="1" placeholder="#" title="Number of attendees">
       <button class="btn secondary" id="addBtn" disabled>Add</button>
     </div>
 
+    <div id="duplicateMsg" style="display:none;font-size:0.8rem;color:var(--mid);margin:0.3rem 0 0.2rem;padding-left:0.25rem"></div>
     <div class="attendee-list" id="attendeeList"></div>
 
     <div class="find-btn-row">
@@ -819,7 +843,7 @@
         <span class="pill" data-continent="Oceania">Oceania</span>
         <span class="pill" data-continent="South America">S. America</span>
       </div>
-      <button class="btn go" id="findBtn" disabled>Find Best Locations →</button>
+      <button class="btn go" id="findBtn" disabled title="Add at least 2 attendees to find destinations">Find Best Locations →</button>
     </div>
   </div>
 
@@ -849,7 +873,7 @@
           <thead>
             <tr>
               <th>#</th><th>City</th>
-              <th class="r">Est. Cost (USD)</th><th class="r">Est. Carbon</th><th class="r">Avg Flights</th>
+              <th class="r sortable" data-sort="est_cost">Est. Cost (USD)<span class="sort-arrow"></span></th><th class="r sortable" data-sort="est_carbon">Est. Carbon<span class="sort-arrow"></span></th><th class="r sortable" data-sort="avg_hops">Avg. Hops<span class="sort-arrow"></span></th>
               <th class="r">Total Dist</th><th class="r">Avg Dist</th><th></th>
             </tr>
           </thead>
@@ -862,7 +886,7 @@
           <thead>
             <tr>
               <th>#</th><th>City</th>
-              <th class="r">Est. Cost (USD)</th><th class="r">Est. Carbon</th><th class="r">Avg Flights</th>
+              <th class="r sortable" data-sort="est_cost">Est. Cost (USD)<span class="sort-arrow"></span></th><th class="r sortable" data-sort="est_carbon">Est. Carbon<span class="sort-arrow"></span></th><th class="r sortable" data-sort="avg_hops">Avg. Hops<span class="sort-arrow"></span></th>
               <th class="r">Total Dist</th><th class="r">Avg Dist</th><th>Local Attendees</th><th></th>
             </tr>
           </thead>
@@ -884,7 +908,7 @@
         <div class="price-toolbar" id="priceToolbar" style="display:none">
           <span class="price-note">Estimates shown above are distance-based</span>
           <div style="display:flex;align-items:center;gap:0.6rem;margin-left:auto">
-            <label style="font-size:0.8rem;color:var(--mid);white-space:nowrap">Weeks ahead:</label>
+            <label style="font-size:0.8rem;color:var(--mid);white-space:nowrap">Weeks ahead <span style="font-size:0.7rem;opacity:0.7">(1–52)</span>:</label>
             <input type="number" id="weeksInput" value="8" min="1" max="52"
                    style="width:55px;padding:0.35rem 0.5rem;border:1.5px solid var(--light);border-radius:4px;font-family:'DM Mono',monospace;font-size:0.85rem;text-align:center">
             <button class="btn prices" id="getLiveBtn">✈ Get Live Prices (Google Flights)</button>
@@ -905,8 +929,15 @@ let selectedIata   = null;
 let focusedIata    = null;
 let focusedRowEl   = null;
 let pendingCity    = null; // {location, iatas, rail, city_code}
+let sortKey        = null; // 'est_cost' | 'est_carbon' | 'avg_hops' | null (backend order)
+let sortDir        = 'asc';
 let searchTimer    = null;
 let currentResults = null;
+
+// ── Icons ──
+// Inline SVG train icon — single-path Material-style, uses currentColor so it
+// inherits the surrounding text colour and scales with font-size via 1em.
+const RAIL_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor" style="vertical-align:-0.15em;display:inline-block;flex-shrink:0"><path d="M12 2c-4 0-8 .5-8 4v9.5C4 17.43 5.57 19 7.5 19L6 20.5v.5h2l2-2h4l2 2h2v-.5L16.5 19c1.93 0 3.5-1.57 3.5-3.5V6c0-3.5-3.58-4-8-4zm0 2c3.51 0 5.4.49 6 1H6c.6-.51 2.49-1 6-1zM6 9V7h5v2H6zm5 6H8c-.55 0-1-.45-1-1s.45-1 1-1h3c.55 0 1 .45 1 1s-.45 1-1 1zm5 0h-3c-.55 0-1-.45-1-1s.45-1 1-1h3c.55 0 1 .45 1 1s-.45 1-1 1zm1-6h-5V7h5v2z"/></svg>`;
 
 // ── Elements ──
 const citySearch  = document.getElementById('citySearch');
@@ -933,6 +964,7 @@ citySearch.addEventListener('input', () => {
   pendingCity = null;
   addBtn.disabled = true;
   dropdownActiveIdx = -1;
+  document.getElementById('duplicateMsg').style.display = 'none';
   clearTimeout(searchTimer);
   if (q.length < 2) { dropdown.style.display = 'none'; return; }
   searchTimer = setTimeout(() => fetchCities(q), 250);
@@ -975,8 +1007,20 @@ function selectDropdownItem(idx) {
   citySearch.value = d.location;
   dropdown.style.display = 'none';
   dropdownActiveIdx = -1;
-  addBtn.disabled = false;
-  countInput.focus();
+
+  const dupMsg = document.getElementById('duplicateMsg');
+  const key    = d.city_code || d.location;
+  const isDup  = attendees.some(a => (a.city_code || a.city) === key);
+  if (isDup) {
+    addBtn.disabled = true;
+    dupMsg.textContent = `⚠ ${d.location} is already in your list.`;
+    dupMsg.style.display = 'block';
+    citySearch.focus();
+  } else {
+    addBtn.disabled = false;
+    dupMsg.style.display = 'none';
+    countInput.focus();
+  }
 }
 
 async function fetchCities(q) {
@@ -985,7 +1029,7 @@ async function fetchCities(q) {
   if (!data.length) { dropdown.style.display = 'none'; return; }
   dropdown.innerHTML = data.map((item, i) => {
     const airStr  = item.airports.map(a => `${a.iata} · ${a.name}`).join('  |  ');
-    const railStr = item.rail ? '🚂 rail' : '';
+    const railStr = item.rail ? `${RAIL_ICON} rail` : '';
     const codes   = [airStr, railStr].filter(Boolean).join('  |  ') || 'rail only';
     return `<div class="dropdown-item" data-idx="${i}">
       <div class="loc">${item.location} <span style="font-size:0.72rem;color:var(--muted)">${item.continent || ''}</span></div>
@@ -1011,10 +1055,24 @@ document.addEventListener('click', e => {
 // ── Add attendee ──
 addBtn.addEventListener('click', addAttendee);
 countInput.addEventListener('keydown', e => { if (e.key === 'Enter') addAttendee(); });
+function clampInput(el, min, max, fallback) {
+  el.addEventListener('input', () => {
+    el.value = el.value.replace(/[^0-9]/g, '');        // digits only, no minus/decimal
+    const v = parseInt(el.value, 10);
+    if (el.value !== '' && v > max) el.value = max;    // cap at max while typing
+    if (el.value !== '' && v < min) el.value = min;    // floor at min while typing
+  });
+  el.addEventListener('blur', () => {
+    const v = parseInt(el.value, 10);
+    el.value = (isNaN(v) || v < min) ? fallback : Math.min(v, max);
+  });
+}
+clampInput(countInput, 1, 999, 1);
+clampInput(document.getElementById('weeksInput'), 1, 52, 8);
 
 function addAttendee() {
   if (!pendingCity) return;
-  const count = Math.max(1, parseInt(countInput.value) || 1);
+  const count = Math.max(1, parseInt(countInput.value, 10) || 1);
   attendees.push({ city: pendingCity.location, iatas: pendingCity.iatas,
                    rail: pendingCity.rail || null, city_code: pendingCity.city_code || null, count });
   renderAttendees();
@@ -1023,6 +1081,7 @@ function addAttendee() {
   pendingCity = null;
   addBtn.disabled = true;
   dropdown.style.display = 'none';
+  document.getElementById('duplicateMsg').style.display = 'none';
   findBtn.disabled = attendees.length < 2;
   citySearch.focus();
   if (currentResults) {
@@ -1039,7 +1098,7 @@ function renderAttendees() {
   attendeeList.innerHTML = attendees.map((a, i) => `
     <div class="attendee-chip">
       <span class="chip-city">${a.city}</span>
-      <span class="chip-iatas">${a.iatas.length ? a.iatas.join(' · ') + (a.rail ? ' 🚂' : '') : '🚂 rail only'}</span>
+      <span class="chip-iatas">${a.iatas.length ? a.iatas.join(' · ') + (a.rail ? ` ${RAIL_ICON}` : '') : `${RAIL_ICON} rail only`}</span>
       <span class="chip-count" onclick="editAttendeeCount(${i})" title="Click to edit">${a.count} traveller${a.count > 1 ? 's' : ''}</span>
       <button class="btn danger" tabindex="-1" onclick="removeAttendee(${i})">✕</button>
     </div>
@@ -1062,7 +1121,8 @@ function editAttendeeCount(i) {
   input.select();
 
   const save = () => {
-    const val     = Math.max(1, parseInt(input.value) || 1);
+    const parsed  = parseInt(input.value, 10);
+    const val     = (!isNaN(parsed) && parsed >= 1) ? parsed : attendees[i].count;
     const changed = val !== attendees[i].count;
     attendees[i].count = val;
     renderAttendees();
@@ -1191,18 +1251,41 @@ function minOf(rows, key) {
   return vals.length ? Math.min(...vals) : null;
 }
 
+/** Sort a copy of rows by the active sortKey/sortDir; nulls always last.
+ *  Returns rows unchanged when no sort column is active (backend order). */
+function sortRows(rows) {
+  if (!sortKey) return rows;
+  return rows.slice().sort((a, b) => {
+    const av = a[sortKey], bv = b[sortKey];
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    return sortDir === 'asc' ? av - bv : bv - av;
+  });
+}
+
+/** Reflect the active sort column/direction in every sortable header. */
+function updateSortIndicators() {
+  document.querySelectorAll('.dest-table th.sortable').forEach(th => {
+    const arrow  = th.querySelector('.sort-arrow');
+    const active = th.dataset.sort === sortKey;
+    th.classList.toggle('sort-active', active);
+    arrow.textContent = active ? (sortDir === 'asc' ? '▲' : '▼') : '↕';
+  });
+}
+
 function renderTables(data) {
+  updateSortIndicators();
   const minOverallCost   = minOf(data.overall, 'est_cost');
   const minOverallCarbon = minOf(data.overall, 'est_carbon');
 
-  overallBody.innerHTML = data.overall.map((d, i) => `
+  overallBody.innerHTML = sortRows(data.overall).map((d, i) => `
     <tr data-iata="${d.iata}" onclick="selectDest('${d.iata}', this)">
       <td><span class="rank-num">${i+1}</span></td>
       <td>
         <div class="city-name">${d.city}, ${d.country}
           ${d.is_home ? '<span class="home-tag">home city</span>' : ''}
         </div>
-        <div class="airport-name">${d.iata} · ${d.name}</div>
       </td>
       <td class="r em">${d.est_cost != null ? 'US$' + d.est_cost.toLocaleString() : '—'}${pctTag(d.est_cost, minOverallCost)}</td>
       <td class="r em">${d.est_carbon != null ? d.est_carbon.toLocaleString() + ' kg' : '—'}${pctTag(d.est_carbon, minOverallCarbon)}</td>
@@ -1216,12 +1299,21 @@ function renderTables(data) {
   const minHomeCost   = minOf(data.home, 'est_cost');
   const minHomeCarbon = minOf(data.home, 'est_carbon');
 
-  homeBody.innerHTML = data.home.map((d, i) => `
-    <tr data-iata="${d.iata}" onclick="selectDest('${d.iata}', this)">
+  homeBody.innerHTML = sortRows(data.home).map((d, i) => {
+    const isRailOnly = !d.iata && d.rail;
+    const rowId      = d.iata || d.rail || '';
+    const onClick    = `onclick="selectDest('${rowId}', this)"`;
+    const rowStyle   = '';
+    const cityLabel  = isRailOnly
+      ? `<div class="airport-name">${RAIL_ICON} <span class="home-tag">rail only</span></div>`
+      : '';
+    const routesPill = `<span class="routes-pill">View routes →</span>`;
+    return `
+    <tr data-iata="${rowId}" ${onClick}${rowStyle}>
       <td><span class="rank-num">${i+1}</span></td>
       <td>
         <div class="city-name">${d.city}, ${d.country}</div>
-        <div class="airport-name">${d.iata} · ${d.name}</div>
+        ${cityLabel}
       </td>
       <td class="r em">${d.est_cost != null ? 'US$' + d.est_cost.toLocaleString() : '—'}${pctTag(d.est_cost, minHomeCost)}</td>
       <td class="r em">${d.est_carbon != null ? d.est_carbon.toLocaleString() + ' kg' : '—'}${pctTag(d.est_carbon, minHomeCarbon)}</td>
@@ -1229,11 +1321,24 @@ function renderTables(data) {
       <td class="r">${fmt(d.total_dist)}</td>
       <td class="r">${fmt(d.avg_dist)}</td>
       <td class="r">${d.local_count} local</td>
-      <td class="routes-hint-cell"><span class="routes-pill">View routes →</span></td>
-    </tr>
-  `).join('');
+      <td class="routes-hint-cell">${routesPill}</td>
+    </tr>`;
+  }).join('');
 
 }
+
+// ── Column sorting ──
+// Click cycles a column: ascending → descending → off (back to backend rank).
+document.querySelectorAll('.dest-table th.sortable').forEach(th => {
+  th.addEventListener('click', () => {
+    const key = th.dataset.sort;
+    if (sortKey !== key)      { sortKey = key; sortDir = 'asc'; }
+    else if (sortDir === 'asc') { sortDir = 'desc'; }
+    else                        { sortKey = null; sortDir = 'asc'; }
+    if (currentResults) renderTables(currentResults);
+    else updateSortIndicators();
+  });
+});
 
 // ── Continent filter ──
 let activeContinent = 'Any';
@@ -1289,17 +1394,15 @@ async function selectDest(iata, row) {
   const totalAtt  = attendees.reduce((s, a) => s + a.count, 0);
   const estTotalCost   = data.routes.reduce((s, r) => s + (r.est_price_group || 0), 0);
   const estTotalCarbon = data.routes.reduce((s, r) => s + (r.est_carbon_group || 0), 0);
+  const statParts = [];
+  if (estTotalCost > 0)   statParts.push(`<span class="em">est. US$${estTotalCost.toLocaleString()} total</span>`);
+  if (estTotalCarbon > 0) statParts.push(`<span class="em">🌿 ${estTotalCarbon.toLocaleString()} kg CO₂</span>`);
+  statParts.push(`total ${totalDist.toLocaleString()} km`);
+  statParts.push(`avg ${Math.round(totalDist/totalAtt).toLocaleString()} km/traveller`);
   routeHeader.innerHTML = `
-    <div class="big-iata">${data.dest_iata}</div>
     <div class="dest-info">
       <div class="dest-city">${data.dest.city}, ${data.dest.country}</div>
-      <div class="dest-stats">
-        ${data.dest.name}
-        ${estTotalCost > 0 ? `&nbsp;·&nbsp; <span class="em">est. US$${estTotalCost.toLocaleString()} total</span>` : ''}
-        ${estTotalCarbon > 0 ? `&nbsp;·&nbsp; <span class="em">🌿 ${estTotalCarbon.toLocaleString()} kg CO₂</span>` : ''}
-        &nbsp;·&nbsp; total ${totalDist.toLocaleString()} km &nbsp;·&nbsp;
-        avg ${Math.round(totalDist/totalAtt).toLocaleString()} km/traveller
-      </div>
+      <div class="dest-stats">${statParts.join(' &nbsp;·&nbsp; ')}</div>
     </div>
   `;
 
@@ -1324,7 +1427,7 @@ async function selectDest(iata, row) {
 
     const legs = r.legs.map(l => {
       const isRail = l.mode === 'rail';
-      const modeIcon = isRail ? '🚂' : '✈';
+      const modeIcon = isRail ? RAIL_ICON : '✈';
       const srcLabel = isRail ? l.src_city : l.src;
       const dstLabel = isRail ? l.dst_city : l.dst;
       return `
@@ -1339,9 +1442,13 @@ async function selectDest(iata, row) {
     const estBadge = r.est_price_person
       ? `<span class="att-badge cost">est. US$${r.est_price_person.toLocaleString()}/person · 🌿 ${r.est_carbon_person} kg CO₂</span>`
       : '';
+    const railLegs = r.legs.filter(l => l.mode === 'rail').length;
+    const airLegs  = r.legs.filter(l => l.mode === 'air').length;
     const hopLabel = r.mode === 'rail'
       ? `${r.hops} train leg${r.hops>1?'s':''}`
-      : `${r.hops} flight${r.hops>1?'s':''}`;
+      : r.mode === 'hybrid'
+        ? `${RAIL_ICON} ${railLegs} train + ✈ ${airLegs} flight`
+        : `${r.hops} flight${r.hops>1?'s':''}`;
     return `
       <div class="attendee-route-block">
         <div class="attendee-route-header">
@@ -1354,7 +1461,9 @@ async function selectDest(iata, row) {
       </div>`;
   }).join('');
 
-  // Show price toolbar now routes are loaded
+  // Show price toolbar now routes are loaded. Pricing is mode-aware (air via
+  // Google Flights, rail via the estimate seam), so it applies to every
+  // destination — including rail-only cities.
   document.getElementById('priceToolbar').style.display = 'flex';
   document.getElementById('priceResults').innerHTML = '';
 
@@ -1366,7 +1475,10 @@ async function selectDest(iata, row) {
 document.getElementById('getLiveBtn').addEventListener('click', async () => {
   const btn      = document.getElementById('getLiveBtn');
   const priceDiv = document.getElementById('priceResults');
-  const weeks    = parseInt(document.getElementById('weeksInput').value) || 8;
+  const weeksEl  = document.getElementById('weeksInput');
+  const weeksParsed = parseInt(weeksEl.value, 10);
+  const weeks = isNaN(weeksParsed) ? 8 : Math.min(52, Math.max(1, weeksParsed));
+  weeksEl.value = weeks;   // snap the field to the clamped value
 
   btn.disabled = true;
   btn.textContent = 'Fetching live prices…';
@@ -1404,13 +1516,33 @@ document.getElementById('getLiveBtn').addEventListener('click', async () => {
     const carbonBadge = r.carbon_kg_person != null
       ? `<span class="carbon-badge">🌿 ${r.carbon_kg_person} kg CO₂/person${r.count > 1 ? ` · ${r.carbon_kg_group} kg total` : ''}</span>`
       : `<span class="carbon-na">CO₂ n/a</span>`;
+    const isRail    = r.mode === 'rail';
+    const isHybrid  = r.mode === 'hybrid';
+    const distLabel = r.dist_km ? r.dist_km.toLocaleString() + ' km' : '';
+
+    // Route line: use full city names (consistent with the route legs section).
+    const originCity = r.origin_city || r.origin;
+    const destCity   = r.dest_city   || data.dest_iata;
+    const routeLabel = isRail
+      ? `${RAIL_ICON} ${originCity} → ${destCity} · ${distLabel}`
+      : isHybrid
+        ? `${RAIL_ICON} + ✈ ${originCity} → ${destCity} · ${distLabel}`
+        : `${originCity} → ${destCity} · ${distLabel}`;
+
+    // Source badge: make rail-estimate vs live clearly distinct.
+    // 'mixed' means Google Flights priced the air leg, estimate priced the rail leg.
     const sourceBadge = r.source === 'live'
       ? '<span style="font-size:0.7rem;background:#e8f0fe;color:#1a56db;border:1px solid #b3c5f5;padding:1px 6px;border-radius:2px;margin-left:4px">live</span>'
-      : '<span style="font-size:0.7rem;background:var(--cream);color:var(--mid);border:1px solid var(--light);padding:1px 6px;border-radius:2px;margin-left:4px">est.</span>';
+      : r.source === 'mixed'
+        ? '<span style="font-size:0.7rem;background:#e8f0fe;color:#1a56db;border:1px solid #b3c5f5;padding:1px 6px;border-radius:2px;margin-left:4px">live</span>'
+          + '<span style="font-size:0.7rem;background:#fff8e1;color:#b45309;border:1px solid #fcd34d;padding:1px 6px;border-radius:2px;margin-left:3px">+ rail est.</span>'
+        : isRail
+          ? '<span style="font-size:0.7rem;background:#fff8e1;color:#b45309;border:1px solid #fcd34d;padding:1px 6px;border-radius:2px;margin-left:4px">rail estimate</span>'
+          : '<span style="font-size:0.7rem;background:var(--cream);color:var(--mid);border:1px solid var(--light);padding:1px 6px;border-radius:2px;margin-left:4px">est.</span>';
     return `
       <div class="price-row">
         <span class="price-city">${r.city}</span>
-        <span class="price-origin">${r.origin} → ${data.dest_iata} · ${r.dist_km ? r.dist_km.toLocaleString() + ' km' : ''} · ${r.hops === 0 ? 'direct' : r.hops + ' stop' + (r.hops > 1 ? 's' : '')} ${sourceBadge}</span>
+        <span class="price-origin">${routeLabel} ${sourceBadge}</span>
         <div style="text-align:right">
           <div class="price-amount">US$${r.price_per_person.toLocaleString()} / person</div>
           ${r.count > 1 ? `<div class="price-subtotal">${r.count} × US$${r.price_per_person.toLocaleString()} = US$${r.total_price.toLocaleString()} total</div>` : ''}

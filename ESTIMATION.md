@@ -196,14 +196,45 @@ If SerpAPI fails (network error, quota, unconfigured key), the distance estimate
 
 ## Rail estimation
 
-### Overview
+### Routing modes
 
-For European journeys, the app automatically checks whether a **high-speed rail** service is available and, if so, whether it beats or is close to the estimated air fare. Rail is chosen when:
+For any European leg the app evaluates up to four options and picks the best:
 
-- A **direct (one-leg) rail service** exists *and* the rail fare is **≤ 130%** of the equivalent air fare, **or**
-- A **multi-leg rail route** is outright **cheaper** than air.
+| Mode | When it applies |
+|------|----------------|
+| **Air** | Default. Direct or connecting flights between airports. |
+| **Rail** | A rail path exists and beats or is close to the air fare (see thresholds below). |
+| **Hybrid — train then fly** | The origin city has no commercial airport (e.g. York). The attendee takes the train to the nearest hub airport, then flies the rest of the route. Train first, flight second. |
+| **Gateway — fly then train** | The destination has a rail station and the cheapest option is to fly to a nearby hub airport and catch a short train to the final stop. Flight first, train second. Used when long-distance all-rail would be slow or expensive, e.g. Barcelona → Southampton: fly to Gatwick, then train to Southampton. |
 
-Rail routes that are more than 30% more expensive than air (on a direct basis) are not used — the app defaults to air for those legs.
+Both modes appear as **hybrid** in the UI (shown with a mixed train + plane icon). The distinction is directional: hybrid has the train leg at the origin end, gateway has it at the destination end.
+
+### Mode decision logic
+
+The app runs this priority check for each attendee–destination pair:
+
+1. **Gateway wins** if a fly-to-hub + short-train route exists **and** its total price is lower than both the direct air fare **and** the all-rail fare.
+
+2. **Hybrid wins** (train-to-hub + fly) if the attendee has no airports and the train-then-fly option is cheaper than going all the way by rail.
+
+3. **Rail wins** if any of these are true:
+   - No air route exists at all.
+   - A **direct (one-leg) rail** service is available and the rail fare is **≤ 130%** of the air fare.
+   - A **multi-leg rail** route is outright **cheaper** than flying.
+
+4. **Hybrid / Gateway as last resort**: if neither a rail path nor a direct air route exists, the app falls back to hybrid or gateway if available.
+
+5. **Air** is used in all remaining cases.
+
+#### Summary
+
+```
+gateway cheaper than air AND rail?  → gateway
+hybrid cheaper than rail?           → hybrid (train-then-fly)
+direct rail ≤ air × 1.30?          → rail
+multi-leg rail < air?               → rail
+otherwise                           → air
+```
 
 ### Carbon factor
 
@@ -233,13 +264,13 @@ Each rail interchange adds **$15** (transfer penalty). This is much lower than t
 
 ### Rail network
 
-The following **71 city stations** and **141 bidirectional connections** are included, covering the full Interrail map across the UK and Europe.
+The following **101 city stations** and **216 bidirectional connections** are included, covering the full Interrail map across the UK and Europe.
 
 #### Stations by region
 
 | Region | Stations |
 |--------|---------|
-| **UK** | London, Edinburgh, Glasgow, Manchester, Birmingham, Bristol |
+| **UK** | London, York, Doncaster, Peterborough, Sheffield, Nottingham, Leicester, Derby, Birmingham, Manchester, Liverpool, Leeds, Newcastle, Edinburgh, Glasgow, Perth, Dundee, Aberdeen, Bristol, Southampton, Bournemouth, Brighton, Oxford, Cambridge, Cardiff, Reading, Preston, Carlisle, Exeter, Plymouth, Swindon, Taunton, Bath, Ashford, Newport |
 | **France** | Paris, Lyon, Marseille, Nice, Bordeaux, Toulouse, Strasbourg, Nantes |
 | **Benelux** | Brussels, Amsterdam, Rotterdam |
 | **Germany** | Frankfurt, Berlin, Munich, Hamburg, Cologne, Düsseldorf, Stuttgart, Nuremberg, Hannover |
@@ -291,9 +322,9 @@ The following **71 city stations** and **141 bidirectional connections** are inc
 
 For the full list see `_RAIL_EDGES` in `app.py`.
 
-### Example
+### Examples
 
-**London (LHR) → Brussels (BRU), 1 direct Eurostar leg:**
+#### Pure rail: London → Brussels (1 direct Eurostar leg)
 
 | | Air | Rail |
 |--|-----|------|
@@ -302,8 +333,30 @@ For the full list see `_RAIL_EDGES` in `app.py`.
 | One-way CO₂ | 59.6 kg | 2.2 kg |
 | **Mode chosen** | | ✅ Rail |
 
-Rail wins because $58 < $89 × 1.30 ($116). The round-trip carbon saving is **114.8 kg per person** — roughly equivalent to a short domestic flight.
+Rail wins because $58 ≤ $89 × 1.30 ($116). The round-trip carbon saving is **114.8 kg per person** — roughly equivalent to a short domestic flight.
+
+#### Gateway hybrid: Barcelona → Southampton
+
+A direct BCN → SOU flight requires two connections ($197 one-way). Three-hop all-rail via Paris and London is $193. But flying BCN → LGW then taking a short train to Southampton costs only $173:
+
+| | Air (2 stops) | All-rail (3 legs) | Gateway (fly + train) |
+|--|------|-----|------|
+| Legs | BCN→SOU via hubs | BCN→PAR→LON→SOU | BCN→LGW + LON→SOU |
+| One-way fare | $197 | $193 | **$173** |
+| **Mode chosen** | | | ✅ Gateway |
+
+Gateway wins because $173 < $193 (rail) **and** $173 < $197 (air).
+
+#### Hybrid (train then fly): York → Barcelona
+
+York has no commercial airport. The attendee takes the LNER to London (302 km), then flies LHR → BCN:
+
+| Leg | Mode | Distance | Fare |
+|-----|------|----------|------|
+| York → London | Train (LNER) | 302 km | $51 |
+| LHR → BCN | Flight | 1,140 km | $107 |
+| **Total one-way** | Hybrid | 1,442 km | **$158** |
 
 ### Route detail display
 
-Legs on a rail route show 🚂 in place of ✈, use the station name (e.g. "London St Pancras") rather than an IATA code, and are shaded in a light green to distinguish them from air legs.
+Rail legs show a train icon in place of ✈, use the station name (e.g. "London St Pancras") rather than an IATA code, and are shaded in light green. Hybrid and gateway routes show a mixed icon (`✈ + 🚂`) in the hop count label.

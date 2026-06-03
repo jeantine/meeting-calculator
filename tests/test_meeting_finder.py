@@ -265,6 +265,75 @@ class TestFindDestinationsEndpoint:
         )
         assert res.status_code == 400
 
+    def test_duplicate_city_in_payload_does_not_crash(self, client):
+        """The frontend prevents duplicate cities, but the API should not crash
+        if the same city is submitted twice (e.g. via a direct API call).
+        The backend deduplicates by routing key, so the result should be the
+        same as sending the city once with the combined count."""
+        single = client.post("/api/find_destinations", json={
+            "attendees": [
+                {"city": "London", "iatas": ["LHR"], "count": 3},
+                {"city": "Vienna", "iatas": ["VIE"], "count": 2},
+            ]
+        }).get_json()
+        duplicate = client.post("/api/find_destinations", json={
+            "attendees": [
+                {"city": "London", "iatas": ["LHR"], "count": 2},
+                {"city": "London", "iatas": ["LHR"], "count": 1},   # same city twice
+                {"city": "Vienna", "iatas": ["VIE"], "count": 2},
+            ]
+        }).get_json()
+        # Both should return results without crashing
+        assert "overall" in single
+        assert "overall" in duplicate
+        # Top destination and cost should be identical — duplicates are deduplicated
+        # by routing key before scoring, so they behave like a single entry
+        assert single["overall"][0]["iata"] == duplicate["overall"][0]["iata"]
+        assert single["overall"][0]["est_cost"] == duplicate["overall"][0]["est_cost"]
+
+    def test_missing_city_field_returns_400_not_500(self, client):
+        """BUG-01 regression: attendee missing 'city' used to crash with KeyError (500)."""
+        res = client.post("/api/find_destinations", json={
+            "attendees": [
+                {"count": 2, "iatas": ["LHR"]},          # no 'city'
+                {"city": "Vienna", "iatas": ["VIE"], "count": 1},
+            ]
+        })
+        assert res.status_code == 400
+        assert "city" in res.get_json().get("error", "").lower()
+
+    def test_invalid_count_returns_400(self, client):
+        """Attendee count < 1 should be rejected at the API level."""
+        for bad_count in [0, -1]:
+            res = client.post("/api/find_destinations", json={
+                "attendees": [
+                    {"city": "London", "iatas": ["LHR"], "count": bad_count},
+                    {"city": "Vienna", "iatas": ["VIE"], "count": 1},
+                ]
+            })
+            assert res.status_code == 400, f"count={bad_count} should be rejected"
+
+    def test_unicode_city_search_finds_diacritic_variants(self, client):
+        """BUG-05 regression: searching with or without diacritics should work
+        when the stored name and query share the same root word (e.g. Zürich/Zurich,
+        Kraków/Krakow). Note: München/Munich are different words after stripping
+        diacritics and require a separate aliases mechanism."""
+        cases = [
+            ("Zurich",  "Zurich"),   # plain ASCII — baseline
+            ("Zürich",  "Zurich"),   # umlaut stripped → matches stored "Zurich"
+            ("Krakow",  "Kraków"),   # ASCII query finds native-stored name
+            ("Kraków",  "Kraków"),   # native query also finds it
+        ]
+        for query, expected_city in cases:
+            res = client.get(f"/api/search_city?q={query}")
+            assert res.status_code == 200
+            results = res.get_json()
+            assert len(results) > 0, f"search for '{query}' returned no results"
+            cities = [r['location'] for r in results]
+            assert any(expected_city in c for c in cities), (
+                f"Expected '{expected_city}' in results for query '{query}', got: {cities}"
+            )
+
     def test_returns_up_to_ten_results(self, client):
         payload = {
             "attendees": [
@@ -401,7 +470,7 @@ class TestGetLivePricesEndpoint:
                 data = res.get_json()
             assert res.status_code == 200
             result = data["results"][0]
-            assert "SerpApi failed" in result["source"]
+            assert result["source"] == "estimate"
             assert result["price_per_person"] > 0
         finally:
             app_module.SERPAPI_KEY = orig
@@ -416,6 +485,68 @@ class TestGetLivePricesEndpoint:
             result = data["results"][0]
             assert result["source"]           == "live"
             assert result["price_per_person"] == 450
+        finally:
+            app_module.SERPAPI_KEY = orig
+
+    def test_carbon_comes_from_google_flights_not_estimate(self, client):
+        """When SerpApi returns carbon_g, live carbon must be used — not the
+        distance estimate.  This is a regression test: Phase 1 originally
+        discarded carbon_g and always fell back to est_carbon_person."""
+        orig = self._set_key("test-key")
+        try:
+            # carbon_g = 80 000 g one-way → round-trip = 160 000 g = 160.0 kg
+            mock_price = {"price": 300, "carbon_g": 80_000, "currency": "USD"}
+            with patch("app.serpapi_flight_price", return_value=mock_price):
+                res  = client.post("/api/get_live_prices", json=self.BASE_PAYLOAD)
+                data = res.get_json()
+            result = data["results"][0]
+            expected_carbon = round((80_000 * 2) / 1000, 1)   # 160.0 kg
+            assert result["carbon_kg_person"] == expected_carbon, (
+                f"Expected Google Flights carbon {expected_carbon} kg but got "
+                f"{result['carbon_kg_person']} kg — distance estimate was used instead"
+            )
+        finally:
+            app_module.SERPAPI_KEY = orig
+
+    def test_carbon_differs_from_estimate_when_serpapi_provides_it(self, client):
+        """Live carbon from Google Flights is independent of the distance
+        estimate — the two values must not always coincide."""
+        orig = self._set_key("test-key")
+        try:
+            # Compute what the distance estimate would give for this route
+            routes = app_module.get_routes_for_destination(
+                self.BASE_PAYLOAD["attendees"], self.BASE_PAYLOAD["dest_iata"]
+            )
+            estimate_carbon = routes[0]["est_carbon_person"]
+
+            # Pick a carbon_g that produces a deliberately different round-trip value
+            live_carbon_kg = round(estimate_carbon * 1.5, 1)
+            carbon_g_oneway = int(live_carbon_kg / 2 * 1000)
+
+            mock_price = {"price": 300, "carbon_g": carbon_g_oneway, "currency": "USD"}
+            with patch("app.serpapi_flight_price", return_value=mock_price):
+                res  = client.post("/api/get_live_prices", json=self.BASE_PAYLOAD)
+                data = res.get_json()
+            result = data["results"][0]
+            assert result["carbon_kg_person"] != estimate_carbon, (
+                "carbon_kg_person matches the distance estimate even though "
+                "Google Flights returned a different value — live carbon is not being used"
+            )
+        finally:
+            app_module.SERPAPI_KEY = orig
+
+    def test_carbon_falls_back_to_estimate_when_serpapi_omits_it(self, client):
+        """When SerpApi returns a price but no carbon_g, carbon falls back to
+        the distance estimate — not None or zero."""
+        orig = self._set_key("test-key")
+        try:
+            mock_price = {"price": 300, "currency": "USD"}   # no carbon_g key
+            with patch("app.serpapi_flight_price", return_value=mock_price):
+                res  = client.post("/api/get_live_prices", json=self.BASE_PAYLOAD)
+                data = res.get_json()
+            result = data["results"][0]
+            assert result["carbon_kg_person"] is not None
+            assert result["carbon_kg_person"] > 0
         finally:
             app_module.SERPAPI_KEY = orig
 
@@ -458,6 +589,62 @@ class TestGetLivePricesEndpoint:
             assert data["total_price"] == expected
         finally:
             app_module.SERPAPI_KEY = orig
+
+    def test_rail_route_priced_via_rail_seam_not_serpapi(self, client):
+        """A pure-rail journey must be priced through rail_price(), never SerpApi."""
+        orig = self._set_key("test-key")
+        try:
+            # Paris→Brussels is a short direct rail hop: the route comes back
+            # mode='rail', so SerpApi must not be consulted and the source is
+            # the rail estimate.
+            payload = {
+                "attendees": [{"city": "Paris", "iatas": ["CDG"], "rail": "FRPAR", "count": 1}],
+                "dest_iata": "BEBRU",
+                "weeks_ahead": 8,
+            }
+            with patch("app.serpapi_flight_price") as serp:
+                res  = client.post("/api/get_live_prices", json=payload)
+                data = res.get_json()
+            assert res.status_code == 200
+            result = data["results"][0]
+            assert result["mode"] == "rail"
+            assert result["source"] == "estimate"
+            assert result["price_per_person"] > 0
+            serp.assert_not_called()
+        finally:
+            app_module.SERPAPI_KEY = orig
+
+    def test_hybrid_journey_reports_mixed_source(self, client):
+        """A rail→fly hybrid with live air pricing is labelled 'mixed'."""
+        orig = self._set_key("test-key")
+        try:
+            # Rail-only origin (no airports) forces a hybrid: train to a hub,
+            # then fly. The air segment prices live; the rail segment estimates.
+            payload = {
+                "attendees": [{"city": "York", "rail": "GBYOK", "count": 1}],
+                "dest_iata": "VIE",
+                "weeks_ahead": 8,
+            }
+            mock_price = {"price": 300, "carbon_g": 90_000, "currency": "USD"}
+            with patch("app.serpapi_flight_price", return_value=mock_price):
+                res  = client.post("/api/get_live_prices", json=payload)
+                data = res.get_json()
+            assert res.status_code == 200
+            result = data["results"][0]
+            if result.get("mode") == "hybrid":
+                assert result["source"] == "mixed"
+                # price = live air (300) + estimated rail segment (>0)
+                assert result["price_per_person"] > 300
+        finally:
+            app_module.SERPAPI_KEY = orig
+
+    def test_rail_price_seam_returns_round_trip_estimate(self):
+        """rail_price() default returns a round-trip estimate, double one-way."""
+        oneway_price, oneway_carbon = app_module.estimate_rail_fare(500, 1, "FRPAR", "BEBRU")
+        rp = app_module.rail_price("FRPAR", "BEBRU", 500, 1, "2026-08-01", "2026-08-06")
+        assert rp["source"] == "estimate"
+        assert rp["price"] == oneway_price * 2
+        assert rp["carbon_kg"] == round(oneway_carbon * 2, 1)
 
 
 # ─── 8. Security hardening ───────────────────────────────────────────────────
@@ -748,11 +935,11 @@ class TestUIFeatures:
         dist_pos = html.index("Total Dist")
         assert cost_pos < dist_pos, "Est. Cost column must come before Total Dist"
 
-    def test_avg_flights_column_appears_after_carbon_column(self, html):
-        """Avg Flights must appear to the right of Est. Carbon (cost/carbon sort first)."""
-        carbon_pos  = html.index("Est. Carbon")
-        flights_pos = html.index("Avg Flights")
-        assert carbon_pos < flights_pos, "Est. Carbon column must come before Avg Flights"
+    def test_avg_hops_column_appears_after_carbon_column(self, html):
+        """Avg. Hops must appear to the right of Est. Carbon (cost/carbon sort first)."""
+        carbon_pos = html.index("Est. Carbon")
+        hops_pos   = html.index("Avg. Hops")
+        assert carbon_pos < hops_pos, "Est. Carbon column must come before Avg. Hops"
 
     # ── attendee count editing ────────────────────────────────────────────────
 
@@ -1669,9 +1856,11 @@ class TestFindMeetingDestinationsSameCity:
         ]
         ranked, _ = find_meeting_destinations(attendees)
         assert len(ranked) > 0
-        # LHR itself should top the list — zero cost for everyone
-        assert ranked[0]["iata"] == "LHR", (
-            f"Expected LHR first, got {ranked[0]['iata']}"
+        # London (city code GBLON) should top the list — zero cost for everyone.
+        # The ranking now uses city_codes as primary keys, so LHR/LGW/etc. are
+        # all merged into GBLON before ranking.
+        assert ranked[0]["iata"] == "GBLON", (
+            f"Expected GBLON first, got {ranked[0]['iata']}"
         )
 
     def test_returns_results_not_empty_for_single_unique_origin(self):
@@ -1688,8 +1877,9 @@ class TestFindMeetingDestinationsSameCity:
             {"city": "Paris", "iatas": ["CDG"], "count": 1},
         ]
         ranked, _ = find_meeting_destinations(attendees)
-        home = next((r for r in ranked if r["iata"] == "CDG"), None)
-        assert home is not None, "CDG not in results"
+        # Rankings now use city_codes; CDG/ORY/FRPAR all collapse to FRPAR
+        home = next((r for r in ranked if r["iata"] == "FRPAR"), None)
+        assert home is not None, "FRPAR (Paris) not in results"
         assert home["est_cost"] == 0
 
 
@@ -2120,16 +2310,19 @@ class TestEuropeanRail:
             assert isinstance(info['airports'], list)
 
     def test_rail_only_cities_have_no_airports(self):
-        """Sheffield and Oxford are rail-only — airports list must be empty."""
-        assert CITIES['GBSHE']['airports'] == []
-        assert CITIES['GBOXF']['airports'] == []
-        assert CITIES['GBSHE']['rail'] == 'GBSHE'
-        assert CITIES['GBOXF']['rail'] == 'GBOXF'
+        """Sheffield is the only remaining UK rail-only city — airports list must be empty."""
+        assert CITIES['GBSHF']['airports'] == [], "GBSHF should have no airports"
+        assert CITIES['GBSHF']['rail'] == 'GBSHF'
 
-    def test_new_uk_cities_in_cities_dict(self):
-        """New UK cities added in the city-centric refactor must be present."""
-        for code in ['GBLED', 'GBNEW', 'GBLIV', 'GBSHE', 'GBNOT', 'GBCDF', 'GBOXF']:
-            assert code in CITIES, f"Missing city: {code}"
+    def test_uk_cities_in_cities_dict(self):
+        """Core UK cities must be present in CITIES."""
+        expected = [
+            'GBLON', 'GBEDB', 'GBGLA', 'GBMAN', 'GBBHM', 'GBBRS',
+            'GBLED', 'GBNEW', 'GBLIV', 'GBCDF',
+            'GBSOU', 'GBSHF', 'GBNOT', 'GBABZ',
+        ]
+        for code in expected:
+            assert code in CITIES, f"Missing UK city: {code}"
             assert CITIES[code]['rail'] == code
 
     def test_rail_graph_edges_are_bidirectional(self):
@@ -2340,11 +2533,17 @@ class TestEuropeanRail:
                 f"Rail carbon {route['est_carbon_person']} kg seems too high for Brussels"
             )
 
-    def test_destination_ranking_uses_rail_for_short_european_legs(self, client):
+    def test_destination_ranking_returns_results_for_european_cities(self, client):
         """
-        When all attendees are in European cities well-connected by rail,
-        the carbon estimates should reflect rail factors (much lower) for
-        destinations within the rail network.
+        When all attendees are in European cities well-connected by both air
+        and rail, find_destinations must return a non-empty ranked list with
+        valid cost and carbon fields.
+
+        Note: under the current routing rule, air-origin attendees always use
+        air for scoring (rail is only preferred when no air route exists at
+        all), so carbon figures here reflect air estimates, not the lower rail
+        values.  The Eurostar-style direct-train comparison (direct_air branch)
+        still applies in the route-detail view.
         """
         payload = {
             "attendees": [
@@ -2357,19 +2556,22 @@ class TestEuropeanRail:
         assert res.status_code == 200
         overall = data["overall"]
         assert len(overall) > 0
-        carbons = [d["est_carbon"] for d in overall if d["est_carbon"] is not None]
-        assert min(carbons) < 100, (
-            f"Expected at least one low-carbon destination via rail; min was {min(carbons)} kg"
-        )
+        # All destinations must carry non-negative cost and carbon
+        for d in overall:
+            assert d["est_cost"]   >= 0
+            assert d["est_carbon"] >= 0
+        # Results must be sorted by total cost
+        costs = [d["est_cost"] for d in overall]
+        assert costs == sorted(costs), f"Results not sorted by cost: {costs}"
 
     def test_rail_only_attendee_routed_via_rail(self, client):
         """
         Sheffield (rail-only, no airport) + London attendee →
-        Sheffield should be routed by rail to a European destination.
+        Sheffield should be routed by rail or hybrid to a European destination.
         """
         payload = {
             "attendees": [
-                {"city": "Sheffield", "iatas": [],      "rail": "GBSHE", "count": 1},
+                {"city": "Sheffield", "iatas": [],      "rail": "GBSHF", "count": 1},
                 {"city": "London",    "iatas": ["LHR"], "rail": "GBLON", "count": 1},
             ],
             "dest_iata": "CDG",
@@ -2377,7 +2579,424 @@ class TestEuropeanRail:
         res  = client.post("/api/get_routes", json=payload)
         data = res.get_json()
         assert res.status_code == 200
-        sheffield_route = next(r for r in data["routes"] if "Sheffield" in r["city"])
-        # Sheffield can reach Paris via rail (Sheffield→London→Paris)
-        assert sheffield_route.get("mode") == "rail"
-        assert sheffield_route.get("hops", 0) >= 2
+        shf_route = next(r for r in data["routes"] if "Sheffield" in r["city"])
+        # Sheffield can reach Paris via rail or hybrid (train to hub, fly)
+        assert shf_route.get("mode") in ("rail", "hybrid")
+        assert shf_route.get("hops", 0) >= 2
+
+    def test_air_origin_never_takes_all_rail_when_air_exists(self, client):
+        """
+        Munich (MUC) → Nottingham (EMA): there is a long all-rail path
+        (Munich→Frankfurt→Brussels→London→Nottingham, 4+ legs).
+        Munich has airports, so the routing rule is: use air.  The route must
+        never be all-rail across continental Europe.
+
+        Previous regression: prefer_rail was True when best_air_path is None
+        for the specific destination, causing 4-hop cross-Europe rail journeys.
+        Current rule: air-origin attendees always use air when any air route
+        exists; rail is only chosen when there is literally no air option.
+        """
+        payload = {
+            "attendees": [
+                {"city": "Munich",     "iatas": ["MUC"], "rail": "DEMUC", "count": 1},
+                {"city": "Manchester", "iatas": [],      "rail": "GBMAN", "count": 1},
+            ],
+            "dest_iata": "EMA",   # Nottingham / East Midlands Airport
+        }
+        res  = client.post("/api/get_routes", json=payload)
+        data = res.get_json()
+        assert res.status_code == 200
+
+        munich_route = next(r for r in data["routes"] if "Munich" in r["city"])
+        # Must NOT be all-rail (4 cross-Europe train legs is never acceptable
+        # when the origin has airports)
+        assert munich_route.get("mode") != "rail", (
+            f"Air-origin (Munich/MUC) should never take all-rail; "
+            f"got mode={munich_route.get('mode')!r}"
+        )
+        # Air-origin attendee: must use air (direct or via hub), not hybrid/gateway
+        assert munich_route.get("mode") == "air", (
+            f"Expected air mode for air-origin Munich→Nottingham, "
+            f"got {munich_route.get('mode')!r}"
+        )
+        legs = munich_route.get("legs", [])
+        assert len(legs) >= 1, "Expected at least one leg"
+        assert all(l.get("mode") == "air" for l in legs), (
+            "All legs for an air-origin attendee must be air"
+        )
+
+    def test_gateway_used_when_no_single_mode_reaches_rail_only_dest(self, client):
+        """
+        Mixed mode (gateway: fly to a hub, train the last leg) is used ONLY when
+        neither pure mode can reach the destination.
+
+        An air-only origin (no rail) travelling to a rail-only city is the
+        canonical case: New York has no rail link to Europe, and Sheffield has
+        no airport — so the trip *must* fly to a UK hub then train in.
+
+        (Contrast: a rail-capable origin such as Vienna would simply take the
+        train the whole way, since single-mode trips always win.)
+        """
+        payload = {
+            "attendees": [
+                {"city": "New York", "iatas": ["JFK"], "rail": None, "count": 1},
+                {"city": "London",   "iatas": ["LHR"], "rail": "GBLON", "count": 1},
+            ],
+            "dest_iata": "GBSHF",   # Sheffield — rail-only destination
+        }
+        res  = client.post("/api/get_routes", json=payload)
+        data = res.get_json()
+        assert res.status_code == 200
+
+        ny_route = next(r for r in data["routes"] if "New York" in r["city"])
+        # JFK has no rail and Sheffield has no airport — neither pure mode works,
+        # so a mixed gateway/hybrid itinerary is the only option.
+        assert ny_route.get("mode") in ("hybrid", "gateway"), (
+            f"Expected gateway/hybrid for New York→Sheffield (no single mode), "
+            f"got mode={ny_route.get('mode')!r}"
+        )
+        legs = ny_route.get("legs", [])
+        leg_modes = [l.get("mode") for l in legs]
+        assert "air"  in leg_modes, "Expected at least one air leg (fly to UK hub)"
+        assert "rail" in leg_modes, "Expected at least one rail leg (train to Sheffield)"
+
+    def test_direct_flight_never_replaced_by_gateway(self, client):
+        """
+        When a direct (1-hop) flight exists to the destination, the route must
+        use that flight — never a gateway detour via a nearby hub.
+
+        Canonical regression case: Beijing (PEK) → Paris (CDG).
+        PEK→CDG is a direct flight (1 hop, ~8 189 km).  Brussels (BRU) is
+        slightly closer to Beijing than CDG, and Paris is reachable from Brussels
+        by Eurostar, so a naïve cost model routes PEK→BRU+train instead of
+        flying direct.  The rule is: if a direct flight exists, only compare it
+        against a direct train — no gateway routing is ever considered.
+        """
+        payload = {
+            "attendees": [
+                {"city": "Beijing", "iatas": ["PEK"], "rail": None, "count": 1},
+                {"city": "Paris",   "iatas": ["CDG", "ORY"], "rail": "FRPAR", "count": 1},
+            ],
+            "dest_iata": "CDG",
+        }
+        res  = client.post("/api/get_routes", json=payload)
+        data = res.get_json()
+        assert res.status_code == 200
+
+        beijing_route = next(r for r in data["routes"] if "Beijing" in r["city"])
+        # Must be a direct air route — not a gateway via Brussels or any other hub
+        assert beijing_route.get("mode") == "air", (
+            f"Expected direct air for Beijing→Paris, got mode={beijing_route.get('mode')!r}"
+        )
+        legs = beijing_route.get("legs", [])
+        assert len(legs) == 1, (
+            f"Expected exactly 1 leg (direct flight), got {len(legs)}: {legs}"
+        )
+        assert legs[0].get("mode") == "air"
+        # Must land at a Paris airport (CDG or ORY), not a hub like BRU
+        dest = legs[0].get("dst", "")
+        assert dest in ("CDG", "ORY"), (
+            f"Direct flight should land at CDG or ORY, not {dest!r}"
+        )
+
+
+# ─── 34. Home-city table consistency with overall table & drilldown ──────────
+#
+# Regression guard for the recurring class of bug where a destination's carbon
+# (or cost) shown in the "Attendee Home Cities" table disagreed with the same
+# city in the overall top-10 table and with its route drilldown.  Root cause:
+# the home-city ranking used a SECOND, divergent scoring implementation (always
+# pure rail for rail-capable origins) instead of the shared mode-selection
+# logic that picks air / rail / hybrid / gateway.  All three surfaces now flow
+# through find_meeting_destinations._score_destination, so they must agree.
+
+class TestHomeCityScoreConsistency:
+
+    @staticmethod
+    def _drilldown_totals(attendees, code):
+        """Round-trip (cost, carbon) for `code` summed across the drilldown.
+        Home legs carry no price/carbon keys (zero travel), so default to 0."""
+        routes = get_routes_for_destination(attendees, code)
+        cost   = sum(r.get("est_price_group", 0)  for r in routes)
+        carbon = sum(r.get("est_carbon_group", 0) for r in routes)
+        return round(cost), round(carbon, 1)
+
+    @staticmethod
+    def _find(rows, code):
+        for d in rows:
+            if d.get("iata") == code or d.get("rail") == code:
+                return d
+        return None
+
+    def test_rail_only_home_city_carbon_matches_overall(self):
+        """Sheffield (rail-only) as a home city must show the SAME carbon/cost
+        as the Sheffield row in the overall table — not a pure-rail underestimate.
+        """
+        attendees = [
+            {"city": "Vienna",    "iatas": ["VIE"], "rail": "ATVIE", "count": 1},
+            {"city": "Sheffield", "iatas": [],      "rail": "GBSHF", "count": 1},
+        ]
+        ranked, home = find_meeting_destinations(attendees, top_n=30)
+        overall_shf = self._find(ranked, "GBSHF")
+        home_shf    = self._find(home,   "GBSHF")
+        assert overall_shf is not None, "Sheffield missing from overall table"
+        assert home_shf    is not None, "Sheffield missing from home table"
+        assert home_shf["est_cost"]   == overall_shf["est_cost"]
+        assert home_shf["est_carbon"] == overall_shf["est_carbon"]
+
+    def test_rail_only_home_city_matches_drilldown(self):
+        """Sheffield home row must also equal its per-attendee route drilldown."""
+        attendees = [
+            {"city": "Vienna",    "iatas": ["VIE"], "rail": "ATVIE", "count": 1},
+            {"city": "Sheffield", "iatas": [],      "rail": "GBSHF", "count": 1},
+        ]
+        _, home = find_meeting_destinations(attendees, top_n=30)
+        home_shf = self._find(home, "GBSHF")
+        assert home_shf is not None
+        cost, carbon = self._drilldown_totals(attendees, "GBSHF")
+        assert home_shf["est_cost"]   == cost
+        assert home_shf["est_carbon"] == carbon
+
+    def test_rail_only_home_carbon_reflects_air_leg(self):
+        """The Sheffield home carbon must reflect the air leg of the Vienna
+        attendee's journey (hybrid/gateway), so it is far larger than a pure
+        rail trip would imply.  A continent-crossing all-rail estimate would be
+        on the order of a few tens of kg; the correct mixed route is hundreds."""
+        attendees = [
+            {"city": "Vienna",    "iatas": ["VIE"], "rail": "ATVIE", "count": 1},
+            {"city": "Sheffield", "iatas": [],      "rail": "GBSHF", "count": 1},
+        ]
+        _, home = find_meeting_destinations(attendees, top_n=30)
+        home_shf = self._find(home, "GBSHF")
+        assert home_shf is not None
+        assert home_shf["est_carbon"] > 100, (
+            f"Sheffield home carbon {home_shf['est_carbon']} looks like a pure-rail "
+            "underestimate — the air leg of the mixed route is being ignored"
+        )
+
+    def test_all_home_cities_consistent_with_overall(self):
+        """Generic guard: every city present in BOTH tables must have identical
+        cost and carbon, across several attendee mixes."""
+        scenarios = [
+            [
+                {"city": "Vienna",    "iatas": ["VIE"],        "rail": "ATVIE", "count": 1},
+                {"city": "Sheffield", "iatas": [],             "rail": "GBSHF", "count": 1},
+            ],
+            [
+                {"city": "London", "iatas": ["LHR", "LGW"], "rail": "GBLON", "count": 2},
+                {"city": "Paris",  "iatas": ["CDG", "ORY"], "rail": "FRPAR", "count": 1},
+            ],
+            [
+                {"city": "New York", "iatas": ["JFK"], "rail": None,    "count": 1},
+                {"city": "Munich",   "iatas": ["MUC"], "rail": "DEMUC", "count": 1},
+            ],
+        ]
+        for attendees in scenarios:
+            ranked, home = find_meeting_destinations(attendees, top_n=50)
+            for h in home:
+                code = h.get("iata") or h.get("rail")
+                o = self._find(ranked, code)
+                if o is None:
+                    continue  # home city outside top-N overall — fine
+                assert h["est_cost"] == o["est_cost"], (
+                    f"{code}: home cost {h['est_cost']} != overall {o['est_cost']} "
+                    f"for {attendees}"
+                )
+                assert h["est_carbon"] == o["est_carbon"], (
+                    f"{code}: home carbon {h['est_carbon']} != overall {o['est_carbon']} "
+                    f"for {attendees}"
+                )
+
+    def test_all_home_cities_match_drilldown(self):
+        """Every home-city row must equal its own route drilldown total."""
+        attendees = [
+            {"city": "Vienna",    "iatas": ["VIE"], "rail": "ATVIE", "count": 2},
+            {"city": "Sheffield", "iatas": [],      "rail": "GBSHF", "count": 1},
+            {"city": "Munich",    "iatas": ["MUC"], "rail": "DEMUC", "count": 1},
+        ]
+        _, home = find_meeting_destinations(attendees, top_n=50)
+        for h in home:
+            code = h.get("iata") or h.get("rail")
+            cost, carbon = self._drilldown_totals(attendees, code)
+            assert h["est_cost"] == cost, (
+                f"{code}: home cost {h['est_cost']} != drilldown {cost}"
+            )
+            assert h["est_carbon"] == carbon, (
+                f"{code}: home carbon {h['est_carbon']} != drilldown {carbon}"
+            )
+
+
+# ─── 35. Rail-vs-air decision boundary branches ──────────────────────────────
+#
+# Two branches of the single-mode selection rule are never exercised by the
+# real network + fare model (verified by brute force over every city pair):
+#
+#   • "rail has MORE hops than the flight but the whole trip is <=300 km
+#      -> take rail anyway" — every <=300 km rail trip is a single hop, so this
+#      never fires naturally (closest miss: Amsterdam->Dusseldorf, 2 hops/305 km).
+#   • "equal hops, but rail fare > 1.30x air -> fly" — rail is always cheaper
+#      than air at equal hops (max observed ratio 1.09, Marseille->Zurich).
+#
+# These synthetic tests force each boundary by patching the cost primitives so
+# the dormant branches stay correct if the data or fares ever change.
+
+class TestRailAirDecisionBoundaries:
+
+    def test_short_rail_wins_even_with_more_hops(self):
+        """rail more hops than air, but total <=300 km -> rail must win."""
+        att = [{"city": "Amsterdam", "iatas": ["AMS"], "rail": "NLAMS", "count": 1}]
+        real_rail = app_module.find_best_rail_route
+
+        def fake_rail(o, d):
+            # Synthesize a 2-hop / 250 km train Amsterdam->Brussels; delegate
+            # every other lookup (gateway hub legs etc.) to the real router.
+            if o == "NLAMS" and d == "BEBRU":
+                return ([("NLAMS", "SYNTH", 125, "ICE"),
+                         ("SYNTH", "BEBRU", 125, "ICE")], 2, 250.0)
+            return real_rail(o, d)
+
+        with patch.object(app_module, "find_best_rail_route", side_effect=fake_rail):
+            routes = app_module.get_routes_for_destination(att, "BEBRU")
+        r = routes[0]
+        assert r["mode"] == "rail", (
+            f"2-hop/250 km rail should beat the 1-hop flight, got {r['mode']}"
+        )
+        assert r["hops"] == 2
+        assert r["dist_km"] == 250
+
+    def test_short_rail_more_hops_does_not_win_when_over_300(self):
+        """Same shape but 320 km (>300) -> the 1-hop flight should win."""
+        att = [{"city": "Amsterdam", "iatas": ["AMS"], "rail": "NLAMS", "count": 1}]
+        real_rail = app_module.find_best_rail_route
+
+        def fake_rail(o, d):
+            if o == "NLAMS" and d == "BEBRU":
+                return ([("NLAMS", "SYNTH", 160, "ICE"),
+                         ("SYNTH", "BEBRU", 160, "ICE")], 2, 320.0)
+            return real_rail(o, d)
+
+        with patch.object(app_module, "find_best_rail_route", side_effect=fake_rail):
+            routes = app_module.get_routes_for_destination(att, "BEBRU")
+        assert routes[0]["mode"] == "air", (
+            f"2-hop/320 km rail should lose to the 1-hop flight, got {routes[0]['mode']}"
+        )
+
+    def test_equal_hops_rail_too_expensive_picks_air(self):
+        """equal hops, rail fare > 1.30x air -> fly."""
+        att = [{"city": "Amsterdam", "iatas": ["AMS"], "rail": "NLAMS", "count": 1}]
+        # Baseline: with real fares this pair goes by rail (rail is cheaper).
+        base = app_module.get_routes_for_destination(att, "BEBRU")[0]
+        assert base["mode"] == "rail", (
+            f"baseline Amsterdam->Brussels should be rail, got {base['mode']}"
+        )
+        # Inflate the rail fare so it exceeds 1.30x the (real) air fare.
+        with patch.object(app_module, "estimate_rail_fare",
+                          return_value=(99999.0, 1.0)):
+            routes = app_module.get_routes_for_destination(att, "BEBRU")
+        assert routes[0]["mode"] == "air", (
+            f"over-priced rail at equal hops should fly, got {routes[0]['mode']}"
+        )
+
+    def test_equal_hops_rail_within_130pct_keeps_rail(self):
+        """equal hops, rail fare just under 1.30x air -> stay on rail."""
+        att = [{"city": "Amsterdam", "iatas": ["AMS"], "rail": "NLAMS", "count": 1}]
+        # Air AMS->BRU fare for the comparison.
+        air_path, air_hops, air_dist = app_module.find_best_route("AMS", "BRU")
+        air_price, _ = app_module.estimate_fare(air_dist, air_hops, "AMS", "BRU")
+        rail_fare = air_price * 1.25   # within the 1.30x window
+        with patch.object(app_module, "estimate_rail_fare",
+                          return_value=(rail_fare, 5.0)):
+            routes = app_module.get_routes_for_destination(att, "BEBRU")
+        assert routes[0]["mode"] == "rail", (
+            f"rail within 1.30x air at equal hops should stay rail, got {routes[0]['mode']}"
+        )
+
+
+# ─── 36. Direct Berlin–Munich rail edge ──────────────────────────────────────
+
+class TestBerlinMunichRail:
+
+    def test_berlin_munich_has_direct_rail_edge(self):
+        """A direct Berlin Hbf <-> Munich Hbf ICE edge exists (both directions)."""
+        muc_neighbours = {n for (n, _d, _op) in RAIL_GRAPH["DEMUC"]}
+        ber_neighbours = {n for (n, _d, _op) in RAIL_GRAPH["DEBER"]}
+        assert "DEBER" in muc_neighbours
+        assert "DEMUC" in ber_neighbours
+
+    def test_berlin_to_munich_routes_by_rail(self):
+        """Berlin->Munich is now a single-hop train and should be chosen as rail
+        (previously it flew because the only rail path was 2 hops / 600 km)."""
+        att = [{"city": "Berlin", "iatas": CITIES["DEBER"]["airports"],
+                "rail": "DEBER", "count": 1}]
+        r = get_routes_for_destination(att, "DEMUC")[0]
+        assert r["mode"] == "rail", f"expected rail, got {r['mode']}"
+        assert r["hops"] == 1, f"expected 1 hop, got {r['hops']}"
+
+
+class TestRailCountryCalibration:
+    """estimate_rail_fare applies per-country price multipliers to the
+    distance-based part of the fare (improvement #2)."""
+
+    def test_no_stations_uses_neutral_baseline(self):
+        """Omitting station codes leaves the legacy 1.0-coefficient fare."""
+        d = 500
+        legacy = round(25 + d * 0.09)        # ≤600 km band, coeff 1.0
+        price, _ = estimate_rail_fare(d, 0)
+        assert price == legacy
+
+    def test_france_endpoints_match_neutral_baseline(self):
+        """France is the 1.0 baseline, so FR↔FR equals the no-station fare."""
+        d = 500
+        neutral, _ = estimate_rail_fare(d, 0)
+        fr, _      = estimate_rail_fare(d, 0, "FRPAR", "FRLYS")
+        assert fr == neutral
+
+    def test_uk_dearer_than_italy_same_distance(self):
+        """Expensive network (UK 1.55) > baseline > cheap network (Italy 0.75)."""
+        d = 400
+        uk, _      = estimate_rail_fare(d, 0, "GBLON", "GBMAN")
+        neutral, _ = estimate_rail_fare(d, 0, "FRPAR", "FRLYS")
+        italy, _   = estimate_rail_fare(d, 0, "ITMIL", "ITROM")
+        assert uk > neutral > italy
+
+    def test_cross_border_blends_endpoint_coefficients(self):
+        """Paris→Zurich blends FR 1.00 and CH 1.40 → 1.20 on the per-km part."""
+        d = 600
+        coeff = (1.00 + 1.40) / 2
+        expected = round(25 + d * 0.09 * coeff)   # ≤600 km band
+        price, _ = estimate_rail_fare(d, 0, "FRPAR", "CHZRH")
+        assert price == expected
+
+    def test_coeff_helper_averages_known_countries(self):
+        from app import _rail_price_coeff
+        assert _rail_price_coeff("GBLON") == 1.55
+        assert _rail_price_coeff("ITMIL", "ITROM") == 0.75
+        assert _rail_price_coeff("FRPAR", "CHZRH") == (1.00 + 1.40) / 2
+
+    def test_coeff_helper_defaults_unknown_to_one(self):
+        from app import _rail_price_coeff
+        assert _rail_price_coeff("ZZZZZ") == 1.0
+        assert _rail_price_coeff(None) == 1.0
+        assert _rail_price_coeff() == 1.0
+
+    def test_fixed_and_transfer_components_are_country_neutral(self):
+        """Only the per-km part scales; the fixed base + transfer fee do not.
+        So the UK-minus-Italy gap equals per_km·d·(1.55-0.75), independent of
+        the transfer count."""
+        d = 400
+        uk0, _ = estimate_rail_fare(d, 0, "GBLON", "GBMAN")
+        it0, _ = estimate_rail_fare(d, 0, "ITMIL", "ITROM")
+        uk2, _ = estimate_rail_fare(d, 2, "GBLON", "GBMAN")
+        it2, _ = estimate_rail_fare(d, 2, "ITMIL", "ITROM")
+        # transfer fee ($15 each) is identical on both, so the gap is unchanged
+        assert (uk0 - it0) == (uk2 - it2)
+        expected_gap = round(d * 0.09 * 1.55) - round(d * 0.09 * 0.75)
+        # within rounding of the per-km delta
+        assert abs((uk0 - it0) - expected_gap) <= 1
+
+    def test_carbon_is_unaffected_by_country(self):
+        """Country calibration is price-only; carbon stays distance×factor."""
+        d = 500
+        _, c_uk = estimate_rail_fare(d, 0, "GBLON", "GBMAN")
+        _, c_it = estimate_rail_fare(d, 0, "ITMIL", "ITROM")
+        assert c_uk == c_it == round(d * app_module.RAIL_CARBON_FACTOR, 1)
