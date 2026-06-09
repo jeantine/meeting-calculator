@@ -1364,6 +1364,11 @@ def find_meeting_destinations(attendees, top_n=10, continent_filter=None, nights
     # ── Add hotel costs to ranking if nights > 0 ─────────────────────────────
     # Uses today's date for the seasonal multiplier (the ranking is approximate
     # anyway; live pricing can be fetched with a specific weeks-ahead date).
+    # _transport_scores: snapshot of transport-only costs (keyed by city_code)
+    # _hotel_pp_by_dest: per-person nightly-rate × nights for each city (0 if n/a)
+    _transport_scores: dict = dict(city_scores)
+    _hotel_pp_by_dest: dict = {}   # city_code → hotel cost per person per stay
+
     if nights > 0:
         from datetime import date as _date
         _today_str = _date.today().strftime("%Y-%m-%d")
@@ -1371,19 +1376,32 @@ def find_meeting_destinations(attendees, top_n=10, continent_filter=None, nights
         for dest, score in city_scores.items():
             total_hops, total_dist, t_price, t_carbon = score
             dest_cc = dest if dest in CITIES else IATA_TO_CITY.get(dest)
-            hotel_pp = estimate_hotel_cost(dest_cc, nights, _today_str) if dest_cc else None
-            if hotel_pp is not None:
-                # Count home attendees for this destination (pay no hotel)
-                dest_airports, dest_rail = _dest_airports_and_rail(dest)
-                home_count = sum(
-                    sum(c for _, c in city_list)
-                    for (iata_tuple, rail_station), city_list in unique_origins.items()
-                    if (set(iata_tuple) & set(dest_airports)) or
-                       (not iata_tuple and dest_rail and dest_rail == rail_station)
-                )
-                travelling = total_attendees - home_count
-                if travelling > 0:
-                    t_price += hotel_pp * travelling
+            # Resolve country name for the fallback lookup
+            dest_airports_h, _ = _dest_airports_and_rail(dest)
+            country_name_h = None
+            if dest_cc and dest_cc in CITIES:
+                country_name_h = CITIES[dest_cc].get('country')
+            elif dest_airports_h:
+                for _iata_h in dest_airports_h:
+                    if _iata_h in AIRPORTS:
+                        country_name_h = AIRPORTS[_iata_h].get('country')
+                        break
+            elif dest in AIRPORTS:
+                country_name_h = AIRPORTS[dest].get('country')
+            hotel_pp = estimate_hotel_cost(dest_cc, nights, _today_str,
+                                           country_name=country_name_h)
+            # Count home attendees for this destination (they don't pay hotel)
+            dest_airports2, dest_rail2 = _dest_airports_and_rail(dest)
+            home_count = sum(
+                sum(c for _, c in city_list)
+                for (iata_tuple, rail_station), city_list in unique_origins.items()
+                if (set(iata_tuple) & set(dest_airports2)) or
+                   (not iata_tuple and dest_rail2 and dest_rail2 == rail_station)
+            )
+            travelling = total_attendees - home_count
+            if travelling > 0:
+                t_price += hotel_pp * travelling
+            _hotel_pp_by_dest[dest] = hotel_pp
             updated_scores[dest] = (total_hops, total_dist, t_price, t_carbon)
         city_scores = updated_scores
 
@@ -1418,21 +1436,26 @@ def find_meeting_destinations(attendees, top_n=10, continent_filter=None, nights
             continue   # unknown code — skip
 
         total_hops, total_dist, total_price, total_carbon = scores
+        _t_only    = _transport_scores.get(city_code, scores)[2]
+        _hotel_pp  = _hotel_pp_by_dest.get(city_code, 0)
         ranked.append({
-            'iata':         city_code,
-            'city':         info.get('city', ''),
-            'country':      info.get('country', ''),
-            'name':         info.get('name', ''),
-            'continent':    info.get('continent', 'Unknown'),
-            'total_hops':   total_hops,
-            'total_dist':   round(total_dist),
-            'avg_dist':     round(total_dist / total_attendees),
-            'avg_hops':     round(total_hops / total_attendees, 1),
-            'est_cost':     round(total_price),
-            'est_carbon':   round(total_carbon, 1),
-            'avg_cost':     round(total_price / total_attendees),
-            'avg_carbon':   round(total_carbon / total_attendees, 1),
-            'is_home':      city_code in all_origin_city_codes,
+            'iata':            city_code,
+            'city':            info.get('city', ''),
+            'country':         info.get('country', ''),
+            'name':            info.get('name', ''),
+            'continent':       info.get('continent', 'Unknown'),
+            'total_hops':      total_hops,
+            'total_dist':      round(total_dist),
+            'avg_dist':        round(total_dist / total_attendees),
+            'avg_hops':        round(total_hops / total_attendees, 1),
+            'est_cost':        round(total_price),
+            'est_transport':   round(_t_only),
+            'est_hotel':       round(total_price - _t_only),
+            'hotel_per_person': round(_hotel_pp),
+            'est_carbon':      round(total_carbon, 1),
+            'avg_cost':        round(total_price / total_attendees),
+            'avg_carbon':      round(total_carbon / total_attendees, 1),
+            'is_home':         city_code in all_origin_city_codes,
         })
         if len(ranked) == top_n:
             break
@@ -1469,8 +1492,15 @@ def find_meeting_destinations(attendees, top_n=10, continent_filter=None, nights
         home_scores[home_code] = (display_code, score, local_count)
 
     ranked_home = []
+    def _home_sort_key(item):
+        home_code = item[0]
+        _, scores, local_count = item[1]
+        transport_cost = scores[2]
+        hotel_pp_h = _hotel_pp_by_dest.get(home_code, 0)
+        hotel_cost = hotel_pp_h * max(0, total_attendees - local_count)
+        return (transport_cost + hotel_cost, scores[3])
     for home_code, (display_code, scores, local_count) in sorted(
-            home_scores.items(), key=lambda x: (x[1][1][2], x[1][1][3])):
+            home_scores.items(), key=_home_sort_key):
         total_hops, total_dist, total_price, total_carbon = scores
 
         if display_code.startswith('__rail__'):
@@ -1502,23 +1532,28 @@ def find_meeting_destinations(attendees, top_n=10, continent_filter=None, nights
             disp_name  = info.get('name', '')
             continent  = info.get('continent', 'Unknown')
 
+        _hotel_pp_h    = _hotel_pp_by_dest.get(home_code, 0)
+        _hotel_total_h = round(_hotel_pp_h * max(0, total_attendees - local_count))
         ranked_home.append({
-                'iata':        iata_field,
-                'rail':        rail_field,
-                'city':        city_name,
-                'country':     country,
-                'name':        disp_name,
-                'continent':   continent,
-                'home_city':   city_name,
-                'local_count': local_count,
-                'total_hops':  total_hops,
-                'total_dist':  round(total_dist),
-                'avg_dist':    round(total_dist / total_attendees),
-                'avg_hops':    round(total_hops / total_attendees, 1),
-                'est_cost':    round(total_price),
-                'est_carbon':  round(total_carbon, 1),
-                'avg_cost':    round(total_price / total_attendees),
-                'avg_carbon':  round(total_carbon / total_attendees, 1),
+                'iata':             iata_field,
+                'rail':             rail_field,
+                'city':             city_name,
+                'country':          country,
+                'name':             disp_name,
+                'continent':        continent,
+                'home_city':        city_name,
+                'local_count':      local_count,
+                'total_hops':       total_hops,
+                'total_dist':       round(total_dist),
+                'avg_dist':         round(total_dist / total_attendees),
+                'avg_hops':         round(total_hops / total_attendees, 1),
+                'est_cost':         round(total_price) + _hotel_total_h,
+                'est_transport':    round(total_price),
+                'est_hotel':        _hotel_total_h,
+                'hotel_per_person': round(_hotel_pp_h),
+                'est_carbon':       round(total_carbon, 1),
+                'avg_cost':         round((total_price + _hotel_total_h) / total_attendees),
+                'avg_carbon':       round(total_carbon / total_attendees, 1),
             })
 
     return ranked, ranked_home
@@ -2209,17 +2244,55 @@ _HOTEL_SEASONAL = (
 )
 
 
-def estimate_hotel_cost(city_code: str, nights: int, outbound_date_str: str) -> int | None:
+# Country-level fallback rates (USD/night, midrange) for destinations not in
+# _HOTEL_COSTS.  Keyed by the full country name as stored in AIRPORTS/CITIES.
+_HOTEL_COUNTRY_FALLBACK: dict[str, int] = {
+    # Western Europe
+    'United Kingdom': 140, 'France': 110, 'Germany': 110,
+    'Switzerland': 195, 'Austria': 130, 'Belgium': 125,
+    'Netherlands': 140, 'Luxembourg': 150, 'Monaco': 300,
+    # Northern Europe
+    'Norway': 180, 'Sweden': 160, 'Denmark': 170,
+    'Finland': 150, 'Iceland': 160,
+    # Southern Europe
+    'Italy': 130, 'Spain': 110, 'Portugal': 115,
+    'Greece': 100, 'Malta': 110, 'Cyprus': 100,
+    # Central / Eastern Europe
+    'Poland': 80, 'Czech Republic': 85, 'Slovakia': 80,
+    'Hungary': 85, 'Romania': 70, 'Bulgaria': 65,
+    'Slovenia': 90, 'Croatia': 90, 'Serbia': 65,
+    'Estonia': 85, 'Latvia': 80, 'Lithuania': 75,
+    'Turkey': 80, 'Ukraine': 50,
+    # Rest of world
+    'United States': 150, 'Canada': 130, 'Australia': 140,
+    'Japan': 120, 'China': 90, 'India': 70,
+    'Brazil': 80, 'Mexico': 80, 'South Africa': 75,
+    'Israel': 150, 'United Arab Emirates': 160,
+    'Russia': 70, 'Kazakhstan': 60,
+}
+_HOTEL_DEFAULT_RATE = 100   # USD/night for countries not in the fallback table
+
+
+def estimate_hotel_cost(city_code: str | None, nights: int,
+                        outbound_date_str: str,
+                        country_name: str | None = None) -> int:
     """
     Estimated midrange hotel cost per person for the stay, in USD.
 
+    Resolution order:
+      1. Exact city_code lookup in _HOTEL_COSTS (most accurate)
+      2. Country-name fallback via _HOTEL_COUNTRY_FALLBACK
+      3. Global default of $100/night
+
     Applies a monthly seasonal multiplier so summer bookings reflect higher
-    rack rates and off-peak bookings reflect the discount.  Returns None if
-    the city code is not found in _HOTEL_COSTS.
+    rack rates and off-peak bookings reflect the discount.  Always returns
+    an integer ≥ 0 (never None), so every destination gets a fair estimate.
     """
-    rate = _HOTEL_COSTS.get(city_code)
+    rate = (_HOTEL_COSTS.get(city_code)
+            if city_code else None)
     if rate is None:
-        return None
+        rate = (_HOTEL_COUNTRY_FALLBACK.get(country_name)
+                if country_name else None) or _HOTEL_DEFAULT_RATE
     try:
         month = int(outbound_date_str.split('-')[1])  # 1–12
     except (IndexError, ValueError, AttributeError):
@@ -2662,7 +2735,10 @@ def get_live_prices():
 
     # ── Hotel estimate for the destination ───────────────────────────────────
     dest_city_code = dest_iata if dest_iata in CITIES else IATA_TO_CITY.get(dest_iata)
-    hotel_per_person = estimate_hotel_cost(dest_city_code, nights, outbound_str) if dest_city_code else None
+    _dest_country = (CITIES[dest_city_code]['country'] if dest_city_code and dest_city_code in CITIES
+                     else AIRPORTS.get(dest_iata, {}).get('country'))
+    hotel_per_person = estimate_hotel_cost(dest_city_code, nights, outbound_str,
+                                           country_name=_dest_country) if nights > 0 else None
     # Count non-home travellers
     travelling_count = sum(
         r['count'] for r in results
