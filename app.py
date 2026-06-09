@@ -955,12 +955,13 @@ def dijkstra_all(origin):
     return best
 
 
-def find_meeting_destinations(attendees, top_n=10, continent_filter=None):
+def find_meeting_destinations(attendees, top_n=10, continent_filter=None, nights=0):
     """
     attendees:        list of {'city': str, 'iatas': [str], 'rail': str|None,
                                'count': int}
     continent_filter: if set (e.g. 'Europe'), only airports on that continent
                       are considered as candidate destinations.
+    nights:           number of hotel nights to include in cost ranking (0 = transport only).
     Returns (ranked, ranked_home)
 
     Groups are keyed by (iata_tuple, rail_station) so that rail-only cities
@@ -1359,6 +1360,32 @@ def find_meeting_destinations(attendees, top_n=10, continent_filter=None):
             continue   # canonical candidate is authoritative for this city
         if cc not in city_scores or score[2] < city_scores[cc][2]:
             city_scores[cc] = score
+
+    # ── Add hotel costs to ranking if nights > 0 ─────────────────────────────
+    # Uses today's date for the seasonal multiplier (the ranking is approximate
+    # anyway; live pricing can be fetched with a specific weeks-ahead date).
+    if nights > 0:
+        from datetime import date as _date
+        _today_str = _date.today().strftime("%Y-%m-%d")
+        updated_scores = {}
+        for dest, score in city_scores.items():
+            total_hops, total_dist, t_price, t_carbon = score
+            dest_cc = dest if dest in CITIES else IATA_TO_CITY.get(dest)
+            hotel_pp = estimate_hotel_cost(dest_cc, nights, _today_str) if dest_cc else None
+            if hotel_pp is not None:
+                # Count home attendees for this destination (pay no hotel)
+                dest_airports, dest_rail = _dest_airports_and_rail(dest)
+                home_count = sum(
+                    sum(c for _, c in city_list)
+                    for (iata_tuple, rail_station), city_list in unique_origins.items()
+                    if (set(iata_tuple) & set(dest_airports)) or
+                       (not iata_tuple and dest_rail and dest_rail == rail_station)
+                )
+                travelling = total_attendees - home_count
+                if travelling > 0:
+                    t_price += hotel_pp * travelling
+            updated_scores[dest] = (total_hops, total_dist, t_price, t_carbon)
+        city_scores = updated_scores
 
     # Sort by lowest cost, then lowest carbon
     all_ranked = sorted(city_scores.items(), key=lambda x: (x[1][2], x[1][3]))
@@ -2436,12 +2463,17 @@ def find_destinations():
             return jsonify({'error': 'Each attendee must have a city name.'}), 400
         if not isinstance(a.get('count'), int) or a['count'] < 1:
             return jsonify({'error': 'Each attendee count must be a whole number ≥ 1.'}), 400
-    log.info("find_destinations: %d attendees, continent_filter=%s",
-             len(attendees), continent_filter)
+    try:
+        nights = int(data.get('nights', 0))
+    except (TypeError, ValueError):
+        nights = 0
+    nights = max(0, min(30, nights))
+    log.info("find_destinations: %d attendees, continent_filter=%s, nights=%d",
+             len(attendees), continent_filter, nights)
     ranked, ranked_home = find_meeting_destinations(
-        attendees, continent_filter=continent_filter)
+        attendees, continent_filter=continent_filter, nights=nights)
     return jsonify({'overall': ranked, 'home': ranked_home,
-                    'continent_filter': continent_filter})
+                    'continent_filter': continent_filter, 'nights': nights})
 
 @app.route('/api/get_routes', methods=['POST'])
 @limiter.limit("60/minute")

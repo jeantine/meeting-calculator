@@ -843,7 +843,12 @@
         <span class="pill" data-continent="Oceania">Oceania</span>
         <span class="pill" data-continent="South America">S. America</span>
       </div>
-      <button class="btn go" id="findBtn" disabled title="Add at least 2 attendees to find destinations">Find Best Locations →</button>
+      <div style="display:flex;align-items:center;gap:0.5rem">
+        <label for="hotelNightsInput" style="font-size:0.75rem;color:var(--muted);white-space:nowrap">🏨 Hotel nights:</label>
+        <input type="number" id="hotelNightsInput" value="2" min="0" max="30"
+               style="width:50px;padding:0.3rem 0.4rem;border:1.5px solid var(--border);border-radius:4px;font-family:'DM Mono',monospace;font-size:0.82rem;text-align:center;color:var(--text)">
+        <button class="btn go" id="findBtn" disabled title="Add at least 2 attendees to find destinations">Find Best Locations →</button>
+      </div>
     </div>
   </div>
 
@@ -1168,12 +1173,17 @@ findBtn.addEventListener('click', async () => {
   routeDetail.classList.remove('visible');
   selectedIata = null;
 
+  const hotelNightsParsed = parseInt(document.getElementById('hotelNightsInput').value, 10);
+  const hotelNights = isNaN(hotelNightsParsed) ? 0 : Math.min(30, Math.max(0, hotelNightsParsed));
+  document.getElementById('hotelNightsInput').value = hotelNights;
+
   const res  = await fetch('/api/find_destinations', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       attendees,
-      continent_filter: activeContinent === 'Any' ? null : activeContinent
+      continent_filter: activeContinent === 'Any' ? null : activeContinent,
+      nights: hotelNights
     })
   });
   const data = await res.json();
@@ -1188,6 +1198,14 @@ findBtn.addEventListener('click', async () => {
   currentResults = data;
   renderTables(data);
   resultsContent.style.display = 'block';
+
+  // Update cost column header to reflect whether hotel is included
+  const costHeaderLabel = (data.nights > 0)
+    ? `Est. Cost (transport + ${data.nights}n hotel)`
+    : 'Est. Cost (USD)';
+  document.querySelectorAll('.dest-table th[data-sort="est_cost"]').forEach(th => {
+    th.innerHTML = costHeaderLabel + '<span class="sort-arrow"></span>';
+  });
 
   const firstRow = document.querySelector('#overallTable tbody tr');
   if (firstRow) focusDest(firstRow.dataset.iata, firstRow);
@@ -1467,6 +1485,9 @@ async function selectDest(iata, row) {
   // Show price toolbar now routes are loaded. Pricing is mode-aware (air via
   // Google Flights, rail via the estimate seam), so it applies to every
   // destination — including rail-only cities.
+  // Sync the toolbar's Nights input to the value the user set upfront.
+  document.getElementById('nightsInput').value =
+    document.getElementById('hotelNightsInput').value;
   document.getElementById('priceToolbar').style.display = 'flex';
   document.getElementById('priceResults').innerHTML = '';
 
