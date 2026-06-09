@@ -2935,6 +2935,43 @@ class TestBerlinMunichRail:
         assert r["hops"] == 1, f"expected 1 hop, got {r['hops']}"
 
 
+class TestRailHopPenalty:
+    """The 75 km hop penalty in rail Dijkstra keeps direct services intact
+    when the multi-hop shortcut saves less than one penalty's worth of distance,
+    while still allowing large geographic re-routes through intermediate hubs."""
+
+    def test_marginal_shortcut_rejected_direct_service_preserved(self):
+        """Berlin→Nuremberg→Munich saves only 23 km over the direct ICE (623 km).
+        23 km < 75 km penalty → direct 1-hop route must be chosen."""
+        path, hops, dist = find_best_rail_route('DEBER', 'DEMUC')
+        assert hops == 1, f"expected direct 1-hop, got {hops} hops ({dist:.0f} km)"
+        assert abs(dist - 623) < 5, f"expected ~623 km direct, got {dist:.0f} km"
+
+    def test_large_shortcut_still_takes_geographic_route(self):
+        """Nice→Paris→Toulouse (1610 km, 2 hops) vs Nice→Marseille→Montpellier→Toulouse
+        (605 km, 3 hops).  The 1005 km saving vastly exceeds one penalty (75 km),
+        so the geographic path must win despite having more hops."""
+        path, hops, dist = find_best_rail_route('FRNIC', 'FRTLS')
+        assert hops == 3, f"expected 3-hop geographic route, got {hops} hops ({dist:.0f} km)"
+        assert dist < 700, f"expected <700 km geographic, got {dist:.0f} km (Paris detour?)"
+
+    def test_penalty_does_not_affect_single_hop_routes(self):
+        """Single-hop journeys have no alternative path, so the penalty has no
+        effect — the route and distance must be identical to the direct edge."""
+        path, hops, dist = find_best_rail_route('FRPAR', 'FRLYS')
+        assert hops == 1
+        assert abs(dist - 465) < 5
+
+    def test_dijkstra_rail_all_respects_penalty_for_frankfurt_vienna(self):
+        """Frankfurt→Vienna direct Railjet (744 km, 1 hop) must beat
+        Frankfurt→Munich→Vienna (681 km, 2 hops): saving 63 km < 75 km penalty."""
+        result = dijkstra_rail_all('DEFRA')
+        assert 'ATVIE' in result
+        hops, dist = result['ATVIE']
+        assert hops == 1, f"expected direct 1-hop to Vienna, got {hops} hops"
+        assert abs(dist - 744) < 5
+
+
 class TestRailCountryCalibration:
     """estimate_rail_fare applies per-country price multipliers to the
     distance-based part of the fare (improvement #2)."""
