@@ -862,7 +862,8 @@ class TestUSDCurrencyDisplay:
         assert "US$${r.price_per_person" in html
 
     def test_live_prices_grand_total_uses_us_dollar(self, html):
-        assert "US$${data.total_price" in html
+        # Grand total now combines fares + hotel (grandTotal JS variable)
+        assert "US$${grandTotal" in html
 
     def test_live_prices_subtotal_uses_us_dollar(self, html):
         assert "US$${r.total_price" in html

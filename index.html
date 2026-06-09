@@ -907,10 +907,13 @@
         <!-- Price lookup -->
         <div class="price-toolbar" id="priceToolbar" style="display:none">
           <span class="price-note">Estimates shown above are distance-based</span>
-          <div style="display:flex;align-items:center;gap:0.6rem;margin-left:auto">
+          <div style="display:flex;align-items:center;gap:0.6rem;margin-left:auto;flex-wrap:wrap">
             <label style="font-size:0.8rem;color:var(--mid);white-space:nowrap">Weeks ahead <span style="font-size:0.7rem;opacity:0.7">(1–52)</span>:</label>
             <input type="number" id="weeksInput" value="8" min="1" max="52"
                    style="width:55px;padding:0.35rem 0.5rem;border:1.5px solid var(--light);border-radius:4px;font-family:'DM Mono',monospace;font-size:0.85rem;text-align:center">
+            <label style="font-size:0.8rem;color:var(--mid);white-space:nowrap;margin-left:0.4rem">Nights <span style="font-size:0.7rem;opacity:0.7">(hotel)</span>:</label>
+            <input type="number" id="nightsInput" value="2" min="0" max="30"
+                   style="width:50px;padding:0.35rem 0.5rem;border:1.5px solid var(--light);border-radius:4px;font-family:'DM Mono',monospace;font-size:0.85rem;text-align:center">
             <button class="btn prices" id="getLiveBtn">✈ Get Live Prices (Google Flights)</button>
           </div>
         </div>
@@ -1473,12 +1476,16 @@ async function selectDest(iata, row) {
 
 // ── Fetch indicative prices ──
 document.getElementById('getLiveBtn').addEventListener('click', async () => {
-  const btn      = document.getElementById('getLiveBtn');
-  const priceDiv = document.getElementById('priceResults');
-  const weeksEl  = document.getElementById('weeksInput');
-  const weeksParsed = parseInt(weeksEl.value, 10);
-  const weeks = isNaN(weeksParsed) ? 8 : Math.min(52, Math.max(1, weeksParsed));
-  weeksEl.value = weeks;   // snap the field to the clamped value
+  const btn       = document.getElementById('getLiveBtn');
+  const priceDiv  = document.getElementById('priceResults');
+  const weeksEl   = document.getElementById('weeksInput');
+  const nightsEl  = document.getElementById('nightsInput');
+  const weeksParsed  = parseInt(weeksEl.value, 10);
+  const nightsParsed = parseInt(nightsEl.value, 10);
+  const weeks  = isNaN(weeksParsed)  ? 8 : Math.min(52, Math.max(1, weeksParsed));
+  const nights = isNaN(nightsParsed) ? 2 : Math.min(30, Math.max(0, nightsParsed));
+  weeksEl.value  = weeks;
+  nightsEl.value = nights;
 
   btn.disabled = true;
   btn.textContent = 'Fetching live prices…';
@@ -1487,7 +1494,7 @@ document.getElementById('getLiveBtn').addEventListener('click', async () => {
   const res  = await fetch('/api/get_live_prices', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ attendees, dest_iata: selectedIata, weeks_ahead: weeks })
+    body: JSON.stringify({ attendees, dest_iata: selectedIata, weeks_ahead: weeks, nights })
   });
   const data = await res.json();
 
@@ -1555,18 +1562,42 @@ document.getElementById('getLiveBtn').addEventListener('click', async () => {
     ? `<span class="carbon-total">🌿 ${data.total_carbon_kg.toLocaleString()} kg CO₂ total</span>`
     : '';
 
-  const totalHtml = data.total_price > 0 ? `
+  // Hotel row — shown when nights > 0 and a rate is available for the city
+  let hotelRowHtml = '';
+  let hotelTotal   = 0;
+  if (data.hotel_per_person != null && data.hotel_nights > 0) {
+    hotelTotal = data.hotel_total || 0;
+    const travCount = data.travelling_count || 0;
+    const nightLabel = data.hotel_nights === 1 ? '1 night' : `${data.hotel_nights} nights`;
+    hotelRowHtml = `
+      <div class="price-row hotel-row">
+        <span class="price-city">🏨 Hotel</span>
+        <span class="price-origin" style="color:var(--mid);font-size:0.82rem">
+          Midrange in ${data.hotel_city || ''} · ${nightLabel}
+          <span style="font-size:0.7rem;background:#f0fdf4;color:#166534;border:1px solid #bbf7d0;padding:1px 6px;border-radius:2px;margin-left:4px">est.</span>
+        </span>
+        <div style="text-align:right">
+          <div class="price-amount">US$${data.hotel_per_person.toLocaleString()} / person</div>
+          ${travCount > 1 ? `<div class="price-subtotal">${travCount} travellers × US$${data.hotel_per_person.toLocaleString()} = US$${hotelTotal.toLocaleString()}</div>` : ''}
+        </div>
+        <span style="font-size:0.75rem;color:var(--mid);align-self:center">per stay</span>
+      </div>`;
+  }
+
+  const grandTotal = data.total_price + hotelTotal;
+  const totalHtml = grandTotal > 0 ? `
     <div class="price-total-row">
-      <span class="label">Total fares
+      <span class="label">Total
         <span class="price-dates">${data.outbound_date} → ${data.return_date}</span>
+        ${hotelTotal > 0 ? `<span style="font-size:0.72rem;color:var(--mid);margin-left:4px">(fares + hotel)</span>` : '(fares)'}
       </span>
       <span style="display:flex;align-items:center">
-        <span class="amount">US$${data.total_price.toLocaleString()}</span>
+        <span class="amount">US$${grandTotal.toLocaleString()}</span>
         ${carbonTotalHtml}
       </span>
     </div>` : '';
 
-  priceDiv.innerHTML = `<div class="price-results">${rows}${totalHtml}</div>`;
+  priceDiv.innerHTML = `<div class="price-results">${rows}${hotelRowHtml}${totalHtml}</div>`;
   priceDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 });
 

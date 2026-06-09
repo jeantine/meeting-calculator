@@ -2114,6 +2114,93 @@ _RAIL_COUNTRY_PRICE = {
 }
 _RAIL_COUNTRY_PRICE_DEFAULT = 1.0
 
+# ── Hotel costs ──────────────────────────────────────────────────────────────
+# Typical midrange business-hotel nightly rate in USD per city.
+# Sourced from aggregated travel-cost data (BudgetYourTrip, Numbeo, Trivago
+# averages as of 2025-26).  "Midrange" = clean 3-4★ business hotel, not a
+# budget hostel or luxury boutique.
+_HOTEL_COSTS: dict[str, int] = {
+    # ── United Kingdom ──────────────────────────────────────────────────────
+    'GBLON': 220, 'GBEDB': 155, 'GBGLA': 110, 'GBMAN': 120,
+    'GBBHM': 105, 'GBBRS': 125, 'GBLED': 105, 'GBNEW':  95,
+    'GBLIV': 105, 'GBCDF': 100, 'GBSOU': 100, 'GBSHF':  90,
+    'GBNOT':  95, 'GBABZ': 105,
+    # ── France ──────────────────────────────────────────────────────────────
+    'FRPAR': 200, 'FRLYS': 120, 'FRMRS': 120, 'FRNIC': 165,
+    'FRBOD': 110, 'FRTLS': 105, 'FRSXB': 115, 'FRNTE':  95,
+    'FRLIL':  95, 'FRMPL': 100, 'FRRNS':  90,
+    # ── Belgium / Netherlands ────────────────────────────────────────────────
+    'BEBRU': 140, 'NLAMS': 175, 'NLRTM': 120, 'BEANR': 120,
+    # ── Luxembourg ──────────────────────────────────────────────────────────
+    'LULUX': 160,
+    # ── Germany ─────────────────────────────────────────────────────────────
+    'DEFRA': 145, 'DEBER': 120, 'DEMUC': 155, 'DEHAM': 135,
+    'DECGN': 120, 'DESTT': 120, 'DEDUS': 130, 'DENUR': 105,
+    'DEHAN': 105, 'DELEI': 100, 'DEDRS': 100,
+    # ── Switzerland ─────────────────────────────────────────────────────────
+    'CHZRH': 250, 'CHGVA': 240, 'CHBSL': 195, 'CHBRN': 180, 'CHLAS': 200,
+    # ── Austria ─────────────────────────────────────────────────────────────
+    'ATVIE': 145, 'ATSBG': 145, 'ATGRZ': 105, 'ATINN': 135,
+    # ── Italy ───────────────────────────────────────────────────────────────
+    'ITMIL': 155, 'ITROM': 165, 'ITTRN': 105, 'ITFLO': 175,
+    'ITVCE': 210, 'ITNAP': 105, 'ITBLN': 120, 'ITGOA': 100, 'ITVRS': 105,
+    # ── Monaco ──────────────────────────────────────────────────────────────
+    'MCMON': 340,
+    # ── Spain / Portugal ────────────────────────────────────────────────────
+    'ESMAD': 120, 'ESBCN': 155, 'ESSVQ': 115, 'ESVLC': 100,
+    'ESMLG': 105, 'PTLIS': 130, 'PTOPO': 120,
+    # ── Czech Republic / Slovakia ────────────────────────────────────────────
+    'CZPRG': 100, 'CZBRQ':  75, 'SKBTS':  90,
+    # ── Hungary / Romania ────────────────────────────────────────────────────
+    'HUBUD':  95, 'ROBUH':  75,
+    # ── Poland ──────────────────────────────────────────────────────────────
+    'PLWAW':  90, 'PLKRK':  80, 'PLWRO':  80, 'PLGDN':  80,
+    # ── Western Balkans / Southeast Europe ──────────────────────────────────
+    'SILJB': 105, 'HRZAG':  95, 'RSBEG':  70, 'BGSFP':  65,
+    'GRTHE':  80, 'GRATH': 110, 'TRIST':  85,
+    # ── Scandinavia ─────────────────────────────────────────────────────────
+    'SESTO': 180, 'SEGOT': 155, 'SEMAL': 145, 'DKCPH': 190, 'NOOSL': 200,
+    # ── Baltic ──────────────────────────────────────────────────────────────
+    'EETAL':  90, 'LVRIX':  85, 'LTVNO':  80,
+}
+
+# Monthly seasonal multipliers (index 0 = January, 11 = December).
+# European cities are busiest Jul–Aug (+28 %), cheapest Jan and Nov (−15 %).
+_HOTEL_SEASONAL = (
+    0.85,  # Jan — low season
+    0.88,  # Feb
+    0.95,  # Mar
+    1.05,  # Apr — Easter shoulder
+    1.10,  # May
+    1.18,  # Jun
+    1.28,  # Jul — peak
+    1.28,  # Aug — peak
+    1.12,  # Sep
+    1.00,  # Oct
+    0.85,  # Nov — low
+    0.90,  # Dec
+)
+
+
+def estimate_hotel_cost(city_code: str, nights: int, outbound_date_str: str) -> int | None:
+    """
+    Estimated midrange hotel cost per person for the stay, in USD.
+
+    Applies a monthly seasonal multiplier so summer bookings reflect higher
+    rack rates and off-peak bookings reflect the discount.  Returns None if
+    the city code is not found in _HOTEL_COSTS.
+    """
+    rate = _HOTEL_COSTS.get(city_code)
+    if rate is None:
+        return None
+    try:
+        month = int(outbound_date_str.split('-')[1])  # 1–12
+    except (IndexError, ValueError, AttributeError):
+        month = 6  # default to June (peak) as a safe overestimate
+    month = max(1, min(12, month))
+    seasonal = _HOTEL_SEASONAL[month - 1]
+    return round(rate * seasonal * nights)
+
 
 def _rail_price_coeff(*station_codes):
     """
@@ -2408,6 +2495,11 @@ def get_live_prices():
         return jsonify({'error': 'Weeks ahead must be a whole number.'}), 400
     if not 1 <= weeks_ahead <= 52:
         return jsonify({'error': 'Weeks ahead must be between 1 and 52.'}), 400
+    try:
+        nights = int(data.get('nights', 2))
+    except (TypeError, ValueError):
+        nights = 2
+    nights = max(0, min(30, nights))
 
     if not dest_iata or not attendees:
         return jsonify({'error': 'Missing data.'}), 400
@@ -2536,13 +2628,29 @@ def get_live_prices():
             'source':           source,
         })
 
+    # ── Hotel estimate for the destination ───────────────────────────────────
+    dest_city_code = dest_iata if dest_iata in CITIES else IATA_TO_CITY.get(dest_iata)
+    hotel_per_person = estimate_hotel_cost(dest_city_code, nights, outbound_str) if dest_city_code else None
+    # Count non-home travellers
+    travelling_count = sum(
+        r['count'] for r in results
+        if not r.get('home') and not r.get('error')
+    )
+    hotel_total = hotel_per_person * travelling_count if hotel_per_person is not None else None
+    dest_city_name = CITIES[dest_city_code]['name'] if dest_city_code and dest_city_code in CITIES else None
+
     return jsonify({
-        'results':         results,
-        'total_price':     total_price,
-        'total_carbon_kg': round(total_carbon, 1) if total_carbon else None,
-        'dest_iata':       dest_iata,
-        'outbound_date':   outbound_str,
-        'return_date':     return_str,
+        'results':              results,
+        'total_price':          total_price,
+        'total_carbon_kg':      round(total_carbon, 1) if total_carbon else None,
+        'dest_iata':            dest_iata,
+        'outbound_date':        outbound_str,
+        'return_date':          return_str,
+        'hotel_per_person':     hotel_per_person,
+        'hotel_total':          hotel_total,
+        'hotel_nights':         nights,
+        'hotel_city':           dest_city_name,
+        'travelling_count':     travelling_count,
     })
 
 
