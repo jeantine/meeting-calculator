@@ -2400,12 +2400,12 @@ class TestEuropeanRail:
 
     def test_dijkstra_rail_all_london_to_frankfurt_multi_hop(self):
         result = dijkstra_rail_all('GBLON')
-        # Shortest 2-hop: GBLON→BEBRU (370) + BEBRU→DEFRA (496) = 866 km
-        # (slightly shorter than GBLON→FRPAR→DEFRA = 1072 km)
+        # Distance-first: GBLON→BEBRU (370) + BEBRU→DECGN (220) + DECGN→DEFRA (190) = 780 km
+        # 3 hops but shorter than the 2-hop GBLON→BEBRU→DEFRA = 866 km path
         assert 'DEFRA' in result
         hops, dist = result['DEFRA']
-        assert hops == 2
-        assert 800 < dist < 1100
+        assert hops == 3
+        assert 700 < dist < 900
 
     def test_dijkstra_rail_all_from_unknown_station_returns_empty(self):
         result = dijkstra_rail_all('ZZZZ')
@@ -2465,7 +2465,8 @@ class TestEuropeanRail:
                 f"Rail path gap: leg {i} ends at {dst_this}, leg {i+1} starts at {src_next}"
 
     def test_find_best_rail_route_leeds_to_paris(self):
-        """Leeds (rail-only for this purpose) to Paris via London."""
+        """Leeds→London→Paris (803 km, 2 hops) is preferred over Leeds→Sheffield→London→Paris
+        (798 km, 3 hops) — the 5 km saving is less than one hop penalty (75 km)."""
         path, hops, dist = find_best_rail_route('GBLED', 'FRPAR')
         assert path is not None
         assert hops == 2   # Leeds → London → Paris
@@ -2924,8 +2925,9 @@ class TestBerlinMunichRail:
         assert "DEMUC" in ber_neighbours
 
     def test_berlin_to_munich_routes_by_rail(self):
-        """Berlin->Munich is now a single-hop train and should be chosen as rail
-        (previously it flew because the only rail path was 2 hops / 600 km)."""
+        """Berlin→Munich direct ICE (623 km, 1 hop) is preferred over the
+        Berlin→Nuremberg→Munich path (600 km, 2 hops) because the 23 km saving
+        is less than one hop penalty (75 km).  The direct service stays as rail."""
         att = [{"city": "Berlin", "iatas": CITIES["DEBER"]["airports"],
                 "rail": "DEBER", "count": 1}]
         r = get_routes_for_destination(att, "DEMUC")[0]

@@ -242,10 +242,16 @@ RAIL_STATIONS = {
     'FRTLS': {'name': 'Toulouse Matabiau',    'city': 'Toulouse',     'country': 'France'},
     'FRSXB': {'name': 'Strasbourg',           'city': 'Strasbourg',   'country': 'France'},
     'FRNTE': {'name': 'Nantes',               'city': 'Nantes',       'country': 'France'},
+    'FRLIL': {'name': 'Lille-Europe',         'city': 'Lille',        'country': 'France'},
+    'FRMPL': {'name': 'Montpellier St-Roch',  'city': 'Montpellier',  'country': 'France'},
+    'FRRNS': {'name': 'Rennes',               'city': 'Rennes',       'country': 'France'},
     # ── Belgium / Netherlands ───────────────────────────────────────────────
     'BEBRU': {'name': 'Brussels-Midi',        'city': 'Brussels',     'country': 'Belgium'},
     'NLAMS': {'name': 'Amsterdam Centraal',   'city': 'Amsterdam',    'country': 'Netherlands'},
     'NLRTM': {'name': 'Rotterdam Centraal',   'city': 'Rotterdam',    'country': 'Netherlands'},
+    'BEANR': {'name': 'Antwerp Centraal',     'city': 'Antwerp',      'country': 'Belgium'},
+    # ── Luxembourg ──────────────────────────────────────────────────────────
+    'LULUX': {'name': 'Luxembourg',           'city': 'Luxembourg',   'country': 'Luxembourg'},
     # ── Germany ─────────────────────────────────────────────────────────────
     'DEFRA': {'name': 'Frankfurt Hbf',        'city': 'Frankfurt',    'country': 'Germany'},
     'DEBER': {'name': 'Berlin Hbf',           'city': 'Berlin',       'country': 'Germany'},
@@ -256,15 +262,19 @@ RAIL_STATIONS = {
     'DEDUS': {'name': 'Düsseldorf Hbf',       'city': 'Düsseldorf',   'country': 'Germany'},
     'DENUR': {'name': 'Nuremberg Hbf',        'city': 'Nuremberg',    'country': 'Germany'},
     'DEHAN': {'name': 'Hannover Hbf',         'city': 'Hannover',     'country': 'Germany'},
+    'DELEI': {'name': 'Leipzig Hbf',          'city': 'Leipzig',      'country': 'Germany'},
+    'DEDRS': {'name': 'Dresden Hbf',          'city': 'Dresden',      'country': 'Germany'},
     # ── Switzerland ─────────────────────────────────────────────────────────
     'CHZRH': {'name': 'Zurich Hbf',           'city': 'Zurich',       'country': 'Switzerland'},
     'CHGVA': {'name': 'Geneva Cornavin',      'city': 'Geneva',       'country': 'Switzerland'},
     'CHBSL': {'name': 'Basel SBB',            'city': 'Basel',        'country': 'Switzerland'},
     'CHBRN': {'name': 'Bern',                 'city': 'Bern',         'country': 'Switzerland'},
+    'CHLAS': {'name': 'Lausanne',             'city': 'Lausanne',     'country': 'Switzerland'},
     # ── Austria ─────────────────────────────────────────────────────────────
     'ATVIE': {'name': 'Vienna Hbf',           'city': 'Vienna',       'country': 'Austria'},
     'ATSBG': {'name': 'Salzburg Hbf',         'city': 'Salzburg',     'country': 'Austria'},
     'ATGRZ': {'name': 'Graz Hbf',             'city': 'Graz',         'country': 'Austria'},
+    'ATINN': {'name': 'Innsbruck Hbf',        'city': 'Innsbruck',    'country': 'Austria'},
     # ── Italy ───────────────────────────────────────────────────────────────
     'ITMIL': {'name': 'Milan Centrale',       'city': 'Milan',        'country': 'Italy'},
     'ITROM': {'name': 'Rome Termini',         'city': 'Rome',         'country': 'Italy'},
@@ -273,6 +283,10 @@ RAIL_STATIONS = {
     'ITVCE': {'name': 'Venice Santa Lucia',   'city': 'Venice',       'country': 'Italy'},
     'ITNAP': {'name': 'Naples Centrale',      'city': 'Naples',       'country': 'Italy'},
     'ITBLN': {'name': 'Bologna Centrale',     'city': 'Bologna',      'country': 'Italy'},
+    'ITGOA': {'name': 'Genova Piazza Principe', 'city': 'Genoa',      'country': 'Italy'},
+    'ITVRS': {'name': 'Verona Porta Nuova',   'city': 'Verona',       'country': 'Italy'},
+    # ── Monaco ──────────────────────────────────────────────────────────────
+    'MCMON': {'name': 'Monaco-Monte-Carlo',   'city': 'Monaco',       'country': 'Monaco'},
     # ── Spain / Portugal ────────────────────────────────────────────────────
     'ESMAD': {'name': 'Madrid Atocha',        'city': 'Madrid',       'country': 'Spain'},
     'ESBCN': {'name': 'Barcelona Sants',      'city': 'Barcelona',    'country': 'Spain'},
@@ -368,6 +382,12 @@ CITIES = {
               'airports': ['SXB'],  'rail': 'FRSXB'},
     'FRNTE': {'name': 'Nantes',     'country': 'France',
               'airports': ['NTE'],  'rail': 'FRNTE'},
+    'FRLIL': {'name': 'Lille',      'country': 'France',
+              'airports': ['LIL'],  'rail': 'FRLIL'},
+    'FRMPL': {'name': 'Montpellier','country': 'France',
+              'airports': ['MPL'],  'rail': 'FRMPL'},
+    'FRRNS': {'name': 'Rennes',     'country': 'France',
+              'airports': ['RNS'],  'rail': 'FRRNS'},
     # ── Belgium / Netherlands ───────────────────────────────────────────────
     'BEBRU': {'name': 'Brussels',   'country': 'Belgium',
               'airports': ['BRU'],  'rail': 'BEBRU'},
@@ -375,6 +395,11 @@ CITIES = {
               'airports': ['AMS'],  'rail': 'NLAMS'},
     'NLRTM': {'name': 'Rotterdam',  'country': 'Netherlands',
               'airports': ['RTM'],  'rail': 'NLRTM'},
+    'BEANR': {'name': 'Antwerp',    'country': 'Belgium',
+              'airports': ['ANR'],  'rail': 'BEANR'},
+    # ── Luxembourg ──────────────────────────────────────────────────────────
+    'LULUX': {'name': 'Luxembourg', 'country': 'Luxembourg',
+              'airports': ['LUX'],  'rail': 'LULUX'},
     # ── Germany ─────────────────────────────────────────────────────────────
     'DEFRA': {'name': 'Frankfurt',  'country': 'Germany',
               'airports': ['FRA'],  'rail': 'DEFRA'},
@@ -394,6 +419,10 @@ CITIES = {
               'airports': ['NUE'],  'rail': 'DENUR'},
     'DEHAN': {'name': 'Hannover',   'country': 'Germany',
               'airports': ['HAJ'],  'rail': 'DEHAN'},
+    'DELEI': {'name': 'Leipzig',    'country': 'Germany',
+              'airports': ['LEJ'],  'rail': 'DELEI'},
+    'DEDRS': {'name': 'Dresden',    'country': 'Germany',
+              'airports': ['DRS'],  'rail': 'DEDRS'},
     # ── Switzerland ─────────────────────────────────────────────────────────
     'CHZRH': {'name': 'Zurich',     'country': 'Switzerland',
               'airports': ['ZRH'],  'rail': 'CHZRH'},
@@ -403,6 +432,8 @@ CITIES = {
               'airports': ['BSL', 'EAP', 'MLH'], 'rail': 'CHBSL'},
     'CHBRN': {'name': 'Bern',       'country': 'Switzerland',
               'airports': ['BRN'],  'rail': 'CHBRN'},
+    'CHLAS': {'name': 'Lausanne',   'country': 'Switzerland',
+              'airports': [],       'rail': 'CHLAS'},
     # ── Austria ─────────────────────────────────────────────────────────────
     'ATVIE': {'name': 'Vienna',     'country': 'Austria',
               'airports': ['VIE'],  'rail': 'ATVIE'},
@@ -410,6 +441,8 @@ CITIES = {
               'airports': ['SZG'],  'rail': 'ATSBG'},
     'ATGRZ': {'name': 'Graz',       'country': 'Austria',
               'airports': ['GRZ'],  'rail': 'ATGRZ'},
+    'ATINN': {'name': 'Innsbruck',  'country': 'Austria',
+              'airports': ['INN'],  'rail': 'ATINN'},
     # ── Italy ───────────────────────────────────────────────────────────────
     'ITMIL': {'name': 'Milan',      'country': 'Italy',
               'airports': ['MXP', 'LIN'], 'rail': 'ITMIL'},
@@ -425,6 +458,13 @@ CITIES = {
               'airports': ['NAP'],  'rail': 'ITNAP'},
     'ITBLN': {'name': 'Bologna',    'country': 'Italy',
               'airports': ['BLQ'],  'rail': 'ITBLN'},
+    'ITGOA': {'name': 'Genoa',      'country': 'Italy',
+              'airports': ['GOA'],  'rail': 'ITGOA'},
+    'ITVRS': {'name': 'Verona',     'country': 'Italy',
+              'airports': ['VRN'],  'rail': 'ITVRS'},
+    # ── Monaco ──────────────────────────────────────────────────────────────
+    'MCMON': {'name': 'Monaco',     'country': 'Monaco',
+              'airports': [],       'rail': 'MCMON'},
     # ── Spain / Portugal ────────────────────────────────────────────────────
     'ESMAD': {'name': 'Madrid',     'country': 'Spain',
               'airports': ['MAD'],  'rail': 'ESMAD'},
@@ -555,32 +595,50 @@ _RAIL_EDGES = [
     ('GBLON', 'BEBRU',  370, 'Eurostar'),
     # ── France internal (TGV) ────────────────────────────────────────────────
     ('FRPAR', 'FRLYS',  465, 'TGV'),
-    ('FRPAR', 'FRMRS',  863, 'TGV'),
+    ('FRPAR', 'FRMRS',  772, 'TGV'),
     ('FRPAR', 'FRNIC',  930, 'TGV'),
     ('FRPAR', 'FRBOD',  580, 'TGV'),
     ('FRPAR', 'FRTLS',  680, 'TGV'),
     ('FRPAR', 'FRNTE',  385, 'TGV'),
     ('FRPAR', 'FRSXB',  490, 'TGV'),
     ('FRLYS', 'FRMRS',  315, 'TGV'),
-    ('FRLYS', 'FRNIC',  430, 'TGV'),
     ('FRLYS', 'FRTLS',  530, 'TGV'),
     ('FRLYS', 'CHGVA',  155, 'TGV/IC'),
     ('FRLYS', 'ITMIL',  400, 'TGV/Frecciarossa'),
     ('FRMRS', 'FRNIC',  200, 'TGV'),
+    # Lille — Eurostar/TGV hub
+    ('GBLON', 'FRLIL',  350, 'Eurostar'),
+    ('FRPAR', 'FRLIL',  220, 'TGV'),
+    ('BEBRU', 'FRLIL',  115, 'Eurostar/Thalys'),
+    # Montpellier
+    ('FRPAR', 'FRMPL',  750, 'TGV'),
+    ('FRMRS', 'FRMPL',  165, 'TGV'),
+    ('FRTLS', 'FRMPL',  240, 'TGV'),
+    # Rennes
+    ('FRPAR', 'FRRNS',  335, 'TGV'),
+    ('FRNTE', 'FRRNS',  110, 'TGV/Intercités'),
     # ── France / Benelux / Germany ───────────────────────────────────────────
     ('FRPAR', 'BEBRU',  312, 'Eurostar/Thalys'),
     ('FRPAR', 'NLAMS',  503, 'Thalys'),
     ('FRPAR', 'DEFRA',  579, 'TGV/ICE'),
-    ('FRPAR', 'CHZRH',  601, 'TGV'),
+    ('FRPAR', 'CHZRH',  493, 'TGV'),
     ('FRPAR', 'CHGVA',  501, 'TGV'),
     ('FRPAR', 'ESBCN', 1040, 'TGV/AVE'),
-    ('FRPAR', 'ITMIL',  693, 'TGV/Frecciarossa'),
-    ('FRPAR', 'ITTRN',  850, 'TGV/Frecciarossa'),
+    ('FRPAR', 'ITMIL',  637, 'TGV/Frecciarossa'),
+    ('FRPAR', 'ITTRN',  660, 'TGV/Frecciarossa'),
+    # Luxembourg
+    ('FRPAR', 'LULUX',  340, 'TGV/IC'),
+    ('BEBRU', 'LULUX',  215, 'IC'),
+    ('DEFRA', 'LULUX',  200, 'IC'),
     ('FRSXB', 'DEFRA',  220, 'TGV/ICE'),
     ('FRSXB', 'CHBSL',   80, 'TER/IC'),
     ('BEBRU', 'NLAMS',  192, 'Thalys'),
     ('BEBRU', 'DEFRA',  496, 'ICE/Thalys'),
     ('BEBRU', 'DECGN',  220, 'Thalys'),
+    # Antwerp
+    ('BEBRU', 'BEANR',   45, 'IC'),
+    ('NLAMS', 'BEANR',  160, 'IC'),
+    ('NLRTM', 'BEANR',  120, 'IC'),
     ('NLAMS', 'DEFRA',  487, 'ICE'),
     ('NLAMS', 'DEBER',  648, 'ICE'),
     ('NLAMS', 'DECGN',  260, 'ICE/Thalys'),
@@ -625,8 +683,10 @@ _RAIL_EDGES = [
     ('CHZRH', 'CHGVA',  236, 'IC'),
     ('CHZRH', 'CHBSL',   85, 'IC'),
     ('CHZRH', 'CHBRN',  125, 'IC'),
-    ('CHGVA', 'CHBRN',  165, 'IC'),
-    ('CHGVA', 'FRNIC',  370, 'TGV'),
+    ('CHGVA', 'CHLAS',   65, 'IC'),
+    ('CHLAS', 'CHBRN',  105, 'IC'),
+    ('CHLAS', 'CHZRH',  228, 'IC'),
+    ('FRPAR', 'CHLAS',  490, 'TGV'),
     ('CHBRN', 'CHBSL',  100, 'IC'),
     ('CHBSL', 'DEFRA',  280, 'ICE'),
     # ── Austria ─────────────────────────────────────────────────────────────
@@ -639,6 +699,9 @@ _RAIL_EDGES = [
     ('ATSBG', 'DEMUC',  150, 'ICE/Railjet'),
     ('ATGRZ', 'SILJB',  190, 'EC'),
     ('ATGRZ', 'HRZAG',  250, 'EC'),
+    # Innsbruck — Brenner corridor
+    ('DEMUC', 'ATINN',  165, 'Railjet'),
+    ('ATINN', 'ITVRS',  210, 'Railjet'),
     # ── Italy (Frecciarossa / EC) ────────────────────────────────────────────
     ('ITMIL', 'ITTRN',  140, 'Frecciarossa'),
     ('ITMIL', 'ITVCE',  265, 'Frecciarossa'),
@@ -650,15 +713,22 @@ _RAIL_EDGES = [
     ('ITBLN', 'ITROM',  385, 'Frecciarossa'),
     ('ITFLO', 'ITROM',  280, 'Frecciarossa'),
     ('ITROM', 'ITNAP',  220, 'Frecciarossa'),
-    ('ITTRN', 'FRNIC',  215, 'EC/TGV'),
     ('ITVCE', 'ATVIE',  580, 'Nightjet/Railjet'),
+    # Genoa
+    ('ITMIL', 'ITGOA',  145, 'Frecciabianca'),
+    ('ITTRN', 'ITGOA',  170, 'Trenitalia'),
+    # Verona
+    ('ITMIL', 'ITVRS',  157, 'Frecciarossa'),
+    ('ITVCE', 'ITVRS',  115, 'Frecciarossa'),
+    # ── Monaco (terminal — reached only from Nice via coastal TER) ───────────
+    ('FRNIC', 'MCMON',   20, 'TER'),
     # ── Iberia (AVE / Alfa Pendular) ─────────────────────────────────────────
     ('ESBCN', 'ESMAD',  620, 'AVE'),
     ('ESBCN', 'ESVLC',  350, 'AVE'),
     ('ESMAD', 'ESVLC',  390, 'AVE'),
     ('ESMAD', 'ESSVQ',  470, 'AVE'),
     ('ESMAD', 'ESMLG',  530, 'AVE'),
-    ('ESMAD', 'PTLIS',  640, 'Renfe/CP'),
+    # No international rail to Portugal (Madrid–Lisbon Talgo suspended 2020, AVE not yet built)
     ('PTLIS', 'PTOPO',  310, 'Alfa Pendular'),
     # ── Central / Eastern Europe ─────────────────────────────────────────────
     ('CZPRG', 'HUBUD',  540, 'EC'),
@@ -677,13 +747,20 @@ _RAIL_EDGES = [
     ('PLWAW', 'PLGDN',  340, 'IC'),
     ('PLKRK', 'CZBRQ',  295, 'EC'),
     ('PLWRO', 'DEBER',  430, 'EC'),
+    # Leipzig
+    ('DEBER', 'DELEI',  190, 'ICE'),
+    ('DEFRA', 'DELEI',  310, 'ICE'),
+    ('DENUR', 'DELEI',  270, 'ICE'),
+    # Dresden
+    ('DEBER', 'DEDRS',  200, 'ICE'),
+    ('CZPRG', 'DEDRS',  150, 'EC'),
     # ── Southeast Europe / Balkans ───────────────────────────────────────────
     ('RSBEG', 'BGSFP',  400, 'EC'),
     ('BGSFP', 'GRTHE',  565, 'IC'),
     ('BGSFP', 'ROBUH',  390, 'IC'),
     ('BGSFP', 'TRIST',  560, 'EC'),
     ('GRTHE', 'GRATH',  500, 'IC'),
-    ('GRTHE', 'TRIST',  560, 'EC'),
+    # Thessaloniki–Istanbul rail link non-operational (track condition/border closure)
     # ── Scandinavia ──────────────────────────────────────────────────────────
     ('DKCPH', 'SESTO',  613, 'SJ/DSB'),
     ('DKCPH', 'SEGOT',  320, 'SJ/DSB'),
@@ -2028,8 +2105,8 @@ def estimate_fare(total_dist_km, num_stops, origin_iata=None, dest_iata=None):
 #   • cheap: Southern & Eastern Europe (Italo/Renfe competition, low-cost ops)
 # Keyed by the 2-letter ISO prefix of the station code (e.g. 'GBLON' → 'GB').
 _RAIL_COUNTRY_PRICE = {
-    'GB': 1.55, 'CH': 1.40, 'NO': 1.35, 'SE': 1.20, 'DK': 1.20,
-    'BE': 1.10, 'NL': 1.10, 'DE': 1.05, 'FR': 1.00, 'AT': 1.00,
+    'GB': 1.55, 'CH': 1.40, 'MC': 1.40, 'NO': 1.35, 'SE': 1.20, 'DK': 1.20,
+    'BE': 1.10, 'NL': 1.10, 'LU': 1.10, 'DE': 1.05, 'FR': 1.00, 'AT': 1.00,
     'IT': 0.75, 'ES': 0.80, 'PT': 0.80,
     'PL': 0.60, 'CZ': 0.60, 'SK': 0.60, 'HU': 0.60, 'RO': 0.55,
     'SI': 0.70, 'HR': 0.65, 'RS': 0.60, 'BG': 0.55, 'GR': 0.70, 'TR': 0.55,
@@ -2122,27 +2199,45 @@ def rail_price(origin_station, dest_station, dist_km, transfers,
     }
 
 
+# Each extra rail hop is penalised by this many km when choosing between routes.
+# Rationale: without a penalty, pure distance-first routing displaces direct
+# services (e.g. Berlin→Munich ICE, Frankfurt→Vienna Railjet) with marginally
+# shorter multi-hop paths via intermediate cities.  A 75 km penalty keeps those
+# direct services while still rerouting dramatic Paris-hub detours (Nice→Toulouse
+# via Paris saves ~1000 km even after the penalty).  Valid range: 64–85 km.
+_RAIL_HOP_PENALTY_KM = 75
+
+
 def dijkstra_rail_all(origin_station):
     """
     Dijkstra over RAIL_GRAPH from origin_station.
     Returns best[(station_code)] = (hops, total_dist_km) for all reachable stations.
+
+    Uses effective_cost = actual_dist + hops * _RAIL_HOP_PENALTY_KM as the
+    routing objective so that (a) dramatic geographic shortcuts are always taken
+    and (b) marginal shortcuts that displace a real direct service are not.
     """
     if origin_station not in RAIL_GRAPH:
         return {}
-    best = {origin_station: (0, 0.0)}
-    heap = [(0, 0.0, origin_station)]
+    INF = math.inf
+    # best[station] = (eff_cost, hops, actual_dist)
+    best = {origin_station: (0.0, 0, 0.0)}
+    heap = [(0.0, 0, 0.0, origin_station)]      # (eff_cost, hops, actual_dist, station)
     while heap:
-        hops, dist, current = heapq.heappop(heap)
-        b_hops, b_dist = best.get(current, (math.inf, math.inf))
-        if hops > b_hops or (hops == b_hops and dist > b_dist):
+        eff, hops, dist, current = heapq.heappop(heap)
+        b_eff, b_hops, _ = best.get(current, (INF, INF, INF))
+        if eff > b_eff or (eff == b_eff and hops > b_hops):
             continue
         for (neighbour, edge_dist, operator) in RAIL_GRAPH.get(current, []):
-            n_hops, n_dist = hops + 1, dist + edge_dist
-            b = best.get(neighbour, (math.inf, math.inf))
-            if n_hops < b[0] or (n_hops == b[0] and n_dist < b[1]):
-                best[neighbour] = (n_hops, n_dist)
-                heapq.heappush(heap, (n_hops, n_dist, neighbour))
-    return best
+            n_hops = hops + 1
+            n_dist = dist + edge_dist
+            n_eff  = n_dist + n_hops * _RAIL_HOP_PENALTY_KM
+            b = best.get(neighbour, (INF, INF, INF))
+            if n_eff < b[0] or (n_eff == b[0] and n_hops < b[1]):
+                best[neighbour] = (n_eff, n_hops, n_dist)
+                heapq.heappush(heap, (n_eff, n_hops, n_dist, neighbour))
+    # Return in callers' expected format: (hops, actual_dist)
+    return {s: (h, d) for s, (_, h, d) in best.items()}
 
 
 def find_best_rail_route(origin_station, dest_station):
@@ -2156,25 +2251,29 @@ def find_best_rail_route(origin_station, dest_station):
     if not origin_station or not dest_station or origin_station == dest_station:
         return None, None, None
 
-    heap = [(0, 0.0, origin_station, [])]
+    INF = math.inf
+    # heap: (eff_cost, hops, actual_dist, station, path)
+    heap = [(0.0, 0, 0.0, origin_station, [])]
     visited = {}
     while heap:
-        hops, total_dist, current, path = heapq.heappop(heap)
+        eff, hops, total_dist, current, path = heapq.heappop(heap)
         if current in visited:
-            ph, pd = visited[current]
-            if hops > ph or (hops == ph and total_dist >= pd):
+            p_eff, p_hops = visited[current]
+            if eff > p_eff or (eff == p_eff and hops >= p_hops):
                 continue
-        visited[current] = (hops, total_dist)
+        visited[current] = (eff, hops)
         if current == dest_station:
             return path, hops, total_dist
         for (neighbour, dist, operator) in RAIL_GRAPH.get(current, []):
+            n_hops = hops + 1
+            n_dist = total_dist + dist
+            n_eff  = n_dist + n_hops * _RAIL_HOP_PENALTY_KM
             if neighbour in visited:
-                ph, pd = visited[neighbour]
-                nh, nd = hops + 1, total_dist + dist
-                if nh > ph or (nh == ph and nd >= pd):
+                p_eff, p_hops = visited[neighbour]
+                if n_eff > p_eff or (n_eff == p_eff and n_hops >= p_hops):
                     continue
             heapq.heappush(heap, (
-                hops + 1, total_dist + dist, neighbour,
+                n_eff, n_hops, n_dist, neighbour,
                 path + [(current, neighbour, dist, operator)]
             ))
     return None, None, None
