@@ -452,14 +452,16 @@
   .dest-table tbody tr:hover .routes-pill,
   .dest-table tr.focused .routes-pill { opacity: 1; }
   .home-tag {
-    font-size: 0.68rem;
-    background: var(--surface2);
+    display: inline-flex;
+    align-items: center;
     color: var(--muted);
-    border: 1px solid var(--border2);
-    padding: 1px 6px;
-    border-radius: 5px;
-    margin-left: 6px;
-    white-space: nowrap;
+    margin-left: 5px;
+    vertical-align: middle;
+  }
+  .home-tag svg {
+    width: 13px;
+    height: 13px;
+    fill: currentColor;
   }
 
   /* ── Low/Average/High bands (relative to all options across the 3 tabs) ── */
@@ -1542,7 +1544,7 @@ function renderTables(data) {
       <td><span class="rank-num">${i+1}</span></td>
       <td>
         <div class="city-name">${d.city}, ${d.country}
-          ${d.is_home ? '<span class="home-tag">home city</span>' : ''}
+          ${d.is_home ? '<span class="home-tag" title="Home city"><svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path d="M10 2.5 L2 9 H4 V17 H8.5 V12.5 H11.5 V17 H16 V9 H18 Z"/></svg></span>' : ''}
         </div>
       </td>
       <td class="r em">${bandTag(d.est_cost, costStats)}${d.est_cost != null ? 'US$' + d.est_cost.toLocaleString() : '—'}</td>
@@ -1559,7 +1561,7 @@ function renderTables(data) {
       <td><span class="rank-num">${i+1}</span></td>
       <td>
         <div class="city-name">${d.city}, ${d.country}
-          ${d.is_home ? '<span class="home-tag">home city</span>' : ''}
+          ${d.is_home ? '<span class="home-tag" title="Home city"><svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path d="M10 2.5 L2 9 H4 V17 H8.5 V12.5 H11.5 V17 H16 V9 H18 Z"/></svg></span>' : ''}
         </div>
       </td>
       <td class="r em">${bandTag(d.est_carbon, carbonStats)}${d.est_carbon != null ? d.est_carbon.toLocaleString() + ' kg' : '—'}</td>
