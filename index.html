@@ -719,39 +719,10 @@
   }
 
   .price-results {
-    border-top: 1px solid var(--border);
-    background: var(--surface);
-  }
-  .price-row {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    padding: 0.7rem 1.2rem;
-    border-bottom: 1px solid var(--border);
-    font-size: 0.86rem;
-    animation: fadeIn .2s ease;
-  }
-  .price-row:last-child { border-bottom: none; }
-  .price-city { flex: 1; font-weight: 500; }
-  .price-origin {
-    font-family: 'DM Mono', monospace;
-    font-size: 0.72rem;
-    color: var(--muted);
-  }
-  .price-amount {
-    font-family: 'DM Mono', monospace;
-    font-size: 0.88rem;
-    font-weight: 600;
-    text-align: right;
-    color: var(--text);
-  }
-  .price-amount.free { color: var(--green); }
-  .price-amount.error { color: var(--red); font-size: 0.76rem; font-weight: 400; }
-  .price-subtotal {
-    font-family: 'DM Mono', monospace;
-    font-size: 0.73rem;
-    color: var(--muted);
-    text-align: right;
+    border: 1px solid var(--border2);
+    border-radius: 14px;
+    overflow: hidden;
+    margin-top: 0.5rem;
   }
   .price-total-row {
     display: flex;
@@ -1902,7 +1873,7 @@ document.getElementById('getLiveBtn').addEventListener('click', async () => {
 
   btn.disabled = true;
   btn.textContent = 'Fetching live prices…';
-  priceDiv.innerHTML = '<div class="price-row"><span class="price-city" style="color:var(--mid)">Searching Google Flights…</span></div>';
+  priceDiv.innerHTML = '<div class="price-results"><div class="attendee-route-block"><div class="attendee-route-header"><span class="att-city" style="color:var(--mid)">Searching Google Flights…</span></div></div></div>';
 
   const res  = await fetch('/api/get_live_prices', {
     method: 'POST',
@@ -1915,59 +1886,49 @@ document.getElementById('getLiveBtn').addEventListener('click', async () => {
   btn.textContent = '✈ Get Live Prices (Google Flights)';
 
   if (data.error) {
-    priceDiv.innerHTML = `<div class="price-row"><span class="price-city price-amount error">⚠ ${data.error}</span></div>`;
+    priceDiv.innerHTML = `<div class="price-results"><div class="attendee-route-block"><div class="attendee-route-header"><span class="att-city" style="color:var(--red)">⚠ ${data.error}</span></div></div></div>`;
     return;
   }
 
-  const rows = data.results.map(r => {
-    if (r.home) return `
-      <div class="price-row">
-        <span class="price-city">${r.city}</span>
-        <span class="price-origin">home city</span>
-        <span class="price-amount free">No travel cost</span>
-        <span class="carbon-badge">🌿 0 kg CO₂</span>
-      </div>`;
+  const rows = data.results.filter(r => !r.home).map(r => {
     if (r.error) return `
-      <div class="price-row">
-        <span class="price-city">${r.city}</span>
-        <span class="price-origin">${r.origin || ''}</span>
-        <span class="price-amount error">⚠ ${r.error}</span>
+      <div class="attendee-route-block">
+        <div class="attendee-route-header">
+          <span class="att-city">${r.city}</span>
+          <span class="att-badge dist" style="color:var(--red)">⚠ ${r.error}</span>
+        </div>
       </div>`;
-    const carbonBadge = r.carbon_kg_person != null
-      ? `<span class="carbon-badge">🌿 ${r.carbon_kg_person} kg CO₂/person${r.count > 1 ? ` · ${r.carbon_kg_group} kg total` : ''}</span>`
-      : `<span class="carbon-na">CO₂ n/a</span>`;
+
     const isRail    = r.mode === 'rail';
     const isHybrid  = r.mode === 'hybrid';
-    const distLabel = r.dist_km ? r.dist_km.toLocaleString() + ' km' : '';
-
-    // Route line: use full city names (consistent with the route legs section).
+    const distLabel  = r.dist_km ? r.dist_km.toLocaleString() + ' km' : '';
     const originCity = r.origin_city || r.origin;
     const destCity   = r.dest_city   || data.dest_iata;
-    const routeLabel = isRail
-      ? `${RAIL_ICON} ${originCity} → ${destCity} · ${distLabel}`
-      : isHybrid
-        ? `${RAIL_ICON} + ✈ ${originCity} → ${destCity} · ${distLabel}`
-        : `${originCity} → ${destCity} · ${distLabel}`;
+    const modeIcon   = isRail ? RAIL_ICON : isHybrid ? `${RAIL_ICON} + ✈` : '✈';
+    const routeBadge = `${modeIcon} ${originCity} → ${destCity}${distLabel ? ' · ' + distLabel : ''}`;
 
-    // Source badge: make rail-estimate vs live clearly distinct.
-    // 'mixed' means Google Flights priced the air leg, estimate priced the rail leg.
-    const sourceBadge = r.source === 'live'
-      ? '<span style="font-size:0.7rem;background:#e8f0fe;color:#1a56db;border:1px solid #b3c5f5;padding:1px 6px;border-radius:2px;margin-left:4px">live</span>'
-      : r.source === 'mixed'
-        ? '<span style="font-size:0.7rem;background:#e8f0fe;color:#1a56db;border:1px solid #b3c5f5;padding:1px 6px;border-radius:2px;margin-left:4px">live</span>'
-          + '<span style="font-size:0.7rem;background:#fff8e1;color:#b45309;border:1px solid #fcd34d;padding:1px 6px;border-radius:2px;margin-left:3px">+ rail est.</span>'
-        : isRail
-          ? '<span style="font-size:0.7rem;background:#fff8e1;color:#b45309;border:1px solid #fcd34d;padding:1px 6px;border-radius:2px;margin-left:4px">rail estimate</span>'
-          : '<span style="font-size:0.7rem;background:var(--cream);color:var(--mid);border:1px solid var(--light);padding:1px 6px;border-radius:2px;margin-left:4px">est.</span>';
+    const countBadge = r.count > 1 ? `<span class="att-badge dist">${r.count} travellers</span>` : '';
+
+    // Source badges with mode icons: live (blue) or est. (yellow); mixed shows both.
+    const LIVE_BADGE = `<span class="att-badge" style="background:#e8f0fe;color:#1a56db;border-color:#b3c5f5">✈ live</span>`;
+    const RAIL_EST_BADGE = `<span class="att-badge" style="background:#fff8e1;color:#b45309;border-color:#fcd34d">${RAIL_ICON} est.</span>`;
+    const AIR_EST_BADGE  = `<span class="att-badge" style="background:#fff8e1;color:#b45309;border-color:#fcd34d">✈ est.</span>`;
+    const sourceBadge = r.source === 'live' ? LIVE_BADGE
+      : r.source === 'mixed'               ? `${LIVE_BADGE} <span style="font-size:0.7rem;color:var(--muted)">+</span> ${RAIL_EST_BADGE}`
+      : isRail                             ? RAIL_EST_BADGE
+      :                                      AIR_EST_BADGE;
+
+    const carbonPart = r.carbon_kg_group != null ? ` · 🌿 ${r.carbon_kg_group} kg CO₂` : '';
+    const totalText  = `US$${r.total_price.toLocaleString()} total${carbonPart}`;
     return `
-      <div class="price-row">
-        <span class="price-city">${r.city}</span>
-        <span class="price-origin">${routeLabel} ${sourceBadge}</span>
-        <div style="text-align:right">
-          <div class="price-amount">US$${r.price_per_person.toLocaleString()} / person</div>
-          ${r.count > 1 ? `<div class="price-subtotal">${r.count} × US$${r.price_per_person.toLocaleString()} = US$${r.total_price.toLocaleString()} total</div>` : ''}
+      <div class="attendee-route-block">
+        <div class="attendee-route-header">
+          <span class="att-city">${r.city}</span>
+          <span class="att-badge dist">${routeBadge}</span>
+          ${countBadge}
+          ${sourceBadge}
+          <span class="att-badge cost" style="margin-left:auto">${totalText}</span>
         </div>
-        ${carbonBadge}
       </div>`;
   }).join('');
 
@@ -1980,27 +1941,21 @@ document.getElementById('getLiveBtn').addEventListener('click', async () => {
   let hotelTotal   = 0;
   if (data.hotel_per_person != null && data.hotel_nights > 0) {
     hotelTotal = data.hotel_total || 0;
-    const travCount    = data.travelling_count || 0;
-    const nightLabel   = data.hotel_nights === 1 ? '1 night' : `${data.hotel_nights} nights`;
-    const hcmiCarbon   = data.hotel_carbon_per_person;
-    const hcmiTotal    = data.hotel_carbon_total;
+    const travCount  = data.travelling_count || 0;
+    const nightLabel = data.hotel_nights === 1 ? '1 night' : `${data.hotel_nights} nights`;
+    const hcmiTotal  = data.hotel_carbon_total;
     const carbonMethodLabel = data.hotel_carbon_is_estimate ? 'est.' : 'HCMI';
-    const carbonLine   = hcmiCarbon != null
-      ? `<div style="font-size:0.75rem;color:#166534;margin-top:2px">🌿 ${hcmiCarbon} kg CO₂/person${hcmiTotal != null && travCount > 1 ? ` · ${hcmiTotal} kg total` : ''} <span style="opacity:0.7">(${carbonMethodLabel})</span></div>`
-      : '';
+    const hotelCarbonPart   = hcmiTotal != null ? ` · 🌿 ${hcmiTotal} kg CO₂ (${carbonMethodLabel})` : '';
+    const hotelTotalText    = `US$${hotelTotal.toLocaleString()} total${hotelCarbonPart}`;
     hotelRowHtml = `
-      <div class="price-row hotel-row">
-        <span class="price-city">${HOTEL_ICON} Hotel</span>
-        <span class="price-origin" style="color:var(--mid);font-size:0.82rem">
-          Midrange in ${data.hotel_city || ''} · ${nightLabel}
-          <span style="font-size:0.7rem;background:#f0fdf4;color:#166534;border:1px solid #bbf7d0;padding:1px 6px;border-radius:2px;margin-left:4px">est.</span>
-        </span>
-        <div style="text-align:right">
-          <div class="price-amount">US$${data.hotel_per_person.toLocaleString()} / person</div>
-          ${travCount > 1 ? `<div class="price-subtotal">${travCount} travellers × US$${data.hotel_per_person.toLocaleString()} = US$${hotelTotal.toLocaleString()}</div>` : ''}
-          ${carbonLine}
+      <div class="attendee-route-block">
+        <div class="attendee-route-header">
+          <span class="att-city">${HOTEL_ICON} Hotel – Midrange in ${data.hotel_city || ''}</span>
+          <span class="att-badge dist">${nightLabel}</span>
+          <span class="att-badge dist">${travCount} traveller${travCount !== 1 ? 's' : ''}</span>
+          <span class="att-badge" style="background:#fff8e1;color:#b45309;border-color:#fcd34d">${HOTEL_ICON} est.</span>
+          <span class="att-badge cost" style="margin-left:auto">${hotelTotalText}</span>
         </div>
-        <span style="font-size:0.75rem;color:var(--mid);align-self:center">per stay</span>
       </div>`;
   }
 
@@ -2009,7 +1964,7 @@ document.getElementById('getLiveBtn').addEventListener('click', async () => {
     <div class="price-total-row">
       <span class="label">Total
         <span class="price-dates">${data.outbound_date} → ${data.return_date}</span>
-        ${hotelTotal > 0 ? `<span style="font-size:0.72rem;color:var(--mid);margin-left:4px">(fares + hotel)</span>` : '(fares)'}
+        <span style="font-size:0.72rem;color:rgba(10,26,14,0.55);margin-left:4px">${hotelTotal > 0 ? '(fares + hotel)' : '(fares)'}</span>
       </span>
       <span style="display:flex;align-items:center">
         <span class="amount">US$${grandTotal.toLocaleString()}</span>

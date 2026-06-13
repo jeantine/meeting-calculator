@@ -861,8 +861,10 @@ class TestUSDCurrencyDisplay:
         """Per-person badge removed; group total badge now carries the USD figure."""
         assert "US$${r.est_price_group" in html
 
-    def test_live_prices_per_person_uses_us_dollar(self, html):
-        assert "US$${r.price_per_person" in html
+    def test_live_prices_total_uses_us_dollar(self, html):
+        # Rows now show group total instead of per-person
+        assert "US$${r.total_price" in html
+        assert "US$${r.price_per_person" not in html
 
     def test_live_prices_grand_total_uses_us_dollar(self, html):
         # Grand total now combines fares + hotel (grandTotal JS variable)
@@ -1347,10 +1349,64 @@ class TestLivePricesPerPersonUSD:
     """
 
     def test_price_amount_div_uses_us_dollar(self, html):
-        assert 'price-amount">US$${r.price_per_person' in html
+        # Main cost badge shows US$-prefixed group total
+        assert 'US$${r.total_price' in html
 
     def test_no_bare_dollar_in_price_amount(self, html):
-        assert 'price-amount">$${r.price_per_person' not in html
+        # Guard: no tag closes directly into bare $${r.total_price (no US$ prefix)
+        assert '>${r.total_price' not in html
+
+
+# ─── 22b. HTML: Live prices — source badges, home filtering, hotel badge ─────
+
+class TestLivePricesBadges:
+    """
+    Live-price rows use icon-aware source badges (✈ live / ✈ est. / rail est.)
+    with a '+' separator for mixed journeys; home-city rows are excluded; the
+    hotel est. badge carries the hotel icon.
+    """
+
+    def test_home_rows_filtered_from_live_prices(self, html):
+        # The live-prices map must start with .filter(r => !r.home) so home
+        # cities (zero travel cost) are excluded from the price list.
+        assert "data.results.filter(r => !r.home).map" in html
+
+    def test_live_badge_has_plane_icon(self, html):
+        assert "✈ live" in html
+
+    def test_air_est_badge_has_plane_icon(self, html):
+        assert "✈ est." in html
+
+    def test_mixed_source_shows_plus_separator(self, html):
+        # A small '+' is rendered between the live-air and rail-est. badges
+        # for mixed (hybrid) journeys.
+        assert 'color:var(--muted)">+</span>' in html
+
+    def test_hotel_est_badge_has_hotel_icon(self, html):
+        # The hotel row's est. badge must include the hotel SVG icon so it is
+        # visually distinct from flight est. badges.
+        assert "${HOTEL_ICON} est." in html
+
+
+# ─── 22c. HTML: Nights label replaces editable input ────────────────────────
+
+class TestNightsLabel:
+    """
+    The nights display in the price toolbar is a read-only <span> driven by
+    the hotel-nights chip — not an editable <input> — so the trip length
+    cannot be overridden independently of the hotel nights set upfront.
+    """
+
+    def test_nights_label_span_present(self, html):
+        assert 'id="nightsLabel"' in html
+
+    def test_no_editable_nights_input(self, html):
+        # The old editable nightsInput element must be gone.
+        assert 'id="nightsInput"' not in html
+
+    def test_nights_label_synced_from_hotel_nights(self, html):
+        # textContent is set from the hotelNights state variable on route load.
+        assert "nightsLabel').textContent" in html
 
 
 # ─── 22. Round-trip pricing correctness ──────────────────────────────────────
