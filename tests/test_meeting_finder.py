@@ -857,8 +857,9 @@ class TestUSDCurrencyDisplay:
     def test_route_header_estimated_total_uses_us_dollar(self, html):
         assert "est. US$" in html
 
-    def test_route_per_person_badge_uses_us_dollar(self, html):
-        assert "US$${r.est_price_person" in html
+    def test_route_group_total_badge_uses_us_dollar(self, html):
+        """Per-person badge removed; group total badge now carries the USD figure."""
+        assert "US$${r.est_price_group" in html
 
     def test_live_prices_per_person_uses_us_dollar(self, html):
         assert "US$${r.price_per_person" in html
@@ -1146,14 +1147,12 @@ class TestRouteViewFormatting:
 
     def test_route_header_shows_cost_before_distance(self, html):
         """
-        In the destination summary bar, est. cost/carbon must appear
-        before the total distance figure.
+        Cost is now shown in the estimated-total row at the bottom of the route
+        detail, not the header stat line. Verify the est. US$ string is still
+        present and the total row class exists.
         """
-        cost_pos = html.index("est. US$")
-        dist_pos = html.index("total ${totalDist")
-        assert cost_pos < dist_pos, (
-            "est. cost should appear before total distance in route header"
-        )
+        assert "est. US$" in html, "est. US$ string missing from route view"
+        assert "price-total-row" in html, "Estimated total row class missing"
 
     def test_route_header_shows_carbon_before_distance(self, html):
         carbon_pos = html.index("estTotalCarbon")
