@@ -2907,7 +2907,7 @@ def get_live_prices():
 
     from datetime import date, timedelta
     outbound     = date.today() + timedelta(weeks=weeks_ahead)
-    return_d     = outbound + timedelta(days=5)
+    return_d     = outbound + timedelta(days=max(1, nights + 1))
     outbound_str = outbound.strftime("%Y-%m-%d")
     return_str   = return_d.strftime("%Y-%m-%d")
 
