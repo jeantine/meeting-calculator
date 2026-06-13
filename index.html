@@ -1144,6 +1144,7 @@ document.addEventListener('click', e => {
 addBtn.addEventListener('click', addAttendee);
 countInput.addEventListener('keydown', e => { if (e.key === 'Enter') addAttendee(); });
 function clampInput(el, min, max, fallback) {
+  el.addEventListener('focus', () => setTimeout(() => el.select(), 0));
   el.addEventListener('input', () => {
     el.value = el.value.replace(/[^0-9]/g, '');        // digits only, no minus/decimal
     const v = parseInt(el.value, 10);
@@ -1162,6 +1163,7 @@ clampInput(document.getElementById('nightsInput'), 0, 30, 3);
 // Hotel nights input — digits only, cap at 30 while typing (no blur reset since empty is fine)
 (function() {
   const el = document.getElementById('hotelNightsInput');
+  el.addEventListener('focus', () => setTimeout(() => el.select(), 0));
   el.addEventListener('input', () => {
     el.value = el.value.replace(/[^0-9]/g, '');
     const v = parseInt(el.value, 10);
