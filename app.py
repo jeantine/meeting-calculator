@@ -590,6 +590,28 @@ _RAIL_EDGES = [
     ('GBEDB', 'GBABZ',  240, 'ScotRail'),
     # LNER: London → Aberdeen
     ('GBLON', 'GBABZ',  850, 'LNER'),
+    # CrossCountry: Birmingham hub → Bristol / Leeds / Newcastle / Nottingham
+    ('GBBHM', 'GBBRS',  140, 'CrossCountry'),
+    ('GBBHM', 'GBLED',  190, 'CrossCountry'),
+    ('GBBHM', 'GBNEW',  330, 'CrossCountry'),
+    ('GBBHM', 'GBNOT',   80, 'CrossCountry'),
+    # CrossCountry: Bristol spine → Sheffield / Leeds / Newcastle / Manchester
+    ('GBBRS', 'GBSHF',  270, 'CrossCountry'),
+    ('GBBRS', 'GBLED',  315, 'CrossCountry'),
+    ('GBBRS', 'GBNEW',  480, 'CrossCountry'),
+    ('GBBRS', 'GBMAN',  300, 'CrossCountry'),
+    # TransPennine: Liverpool east → Leeds / Newcastle; north → Glasgow
+    ('GBLIV', 'GBLED',  120, 'TransPennine'),
+    ('GBLIV', 'GBNEW',  195, 'TransPennine'),
+    ('GBLIV', 'GBGLA',  350, 'TransPennine'),
+    # CrossCountry: Glasgow south → Birmingham
+    ('GBGLA', 'GBBHM',  470, 'CrossCountry'),
+    # Transport for Wales: Cardiff north → Manchester / Nottingham
+    ('GBCDF', 'GBMAN',  290, 'Transport for Wales'),
+    ('GBCDF', 'GBNOT',  280, 'Transport for Wales'),
+    # CrossCountry: Southampton north → Birmingham / Manchester
+    ('GBSOU', 'GBBHM',  210, 'CrossCountry'),
+    ('GBSOU', 'GBMAN',  355, 'CrossCountry'),
     # ── Channel Tunnel ───────────────────────────────────────────────────────
     ('GBLON', 'FRPAR',  493, 'Eurostar'),
     ('GBLON', 'BEBRU',  370, 'Eurostar'),
@@ -617,6 +639,15 @@ _RAIL_EDGES = [
     # Rennes
     ('FRPAR', 'FRRNS',  335, 'TGV'),
     ('FRNTE', 'FRRNS',  110, 'TGV/Intercités'),
+    # TGV intersecteurs / Intercités: cross-country bypassing Paris
+    ('FRBOD', 'FRTLS',  250, 'TGV/Intercités'),
+    ('FRBOD', 'FRNTE',  340, 'Intercités'),
+    ('FRMRS', 'FRBOD',  640, 'Intercités'),
+    ('FRLYS', 'FRMPL',  300, 'TGV'),
+    ('FRLYS', 'FRSXB',  490, 'TGV Rhin-Rhône'),
+    ('FRLYS', 'FRLIL',  690, 'TGV intersecteur'),
+    ('FRLYS', 'FRNTE',  660, 'TGV intersecteur'),
+    ('FRMRS', 'FRSXB',  700, 'TGV Rhin-Rhône'),
     # ── France / Benelux / Germany ───────────────────────────────────────────
     ('FRPAR', 'BEBRU',  312, 'Eurostar/Thalys'),
     ('FRPAR', 'NLAMS',  503, 'Thalys'),
@@ -678,6 +709,13 @@ _RAIL_EDGES = [
     ('DEMUC', 'DENUR',  165, 'ICE'),
     ('DEMUC', 'ATSBG',  150, 'ICE/Railjet'),
     ('DESTT', 'CHZRH',  200, 'ICE'),
+    # Additional ICE connections
+    ('DEFRA', 'DEHAM',  490, 'ICE'),
+    ('DECGN', 'DEMUC',  455, 'ICE'),
+    ('DECGN', 'DESTT',  370, 'ICE'),
+    ('DESTT', 'DEBER',  630, 'ICE'),
+    ('DESTT', 'DEHAM',  660, 'ICE'),
+    ('DEMUC', 'DEHAM',  775, 'ICE'),
     # ── Switzerland ─────────────────────────────────────────────────────────
     ('CHZRH', 'ITMIL',  294, 'EC'),
     ('CHZRH', 'CHGVA',  236, 'IC'),
@@ -689,6 +727,10 @@ _RAIL_EDGES = [
     ('FRPAR', 'CHLAS',  490, 'TGV'),
     ('CHBRN', 'CHBSL',  100, 'IC'),
     ('CHBSL', 'DEFRA',  280, 'ICE'),
+    # Additional Swiss IC connections
+    ('CHGVA', 'CHBRN',  160, 'IC'),
+    ('CHGVA', 'CHBSL',  245, 'IC'),
+    ('CHBRN', 'DEFRA',  440, 'ICE'),
     # ── Austria ─────────────────────────────────────────────────────────────
     ('ATVIE', 'HUBUD',  243, 'Railjet'),
     ('ATVIE', 'CZPRG',  323, 'Railjet'),
@@ -702,6 +744,7 @@ _RAIL_EDGES = [
     # Innsbruck — Brenner corridor
     ('DEMUC', 'ATINN',  165, 'Railjet'),
     ('ATINN', 'ITVRS',  210, 'Railjet'),
+    ('DEMUC', 'ITVRS',  315, 'EC'),
     # ── Italy (Frecciarossa / EC) ────────────────────────────────────────────
     ('ITMIL', 'ITTRN',  140, 'Frecciarossa'),
     ('ITMIL', 'ITVCE',  265, 'Frecciarossa'),
@@ -714,9 +757,23 @@ _RAIL_EDGES = [
     ('ITFLO', 'ITROM',  280, 'Frecciarossa'),
     ('ITROM', 'ITNAP',  220, 'Frecciarossa'),
     ('ITVCE', 'ATVIE',  580, 'Nightjet/Railjet'),
+    # Venice / Verona through-services
+    ('ITVCE', 'ITFLO',  255, 'Frecciarossa'),
+    ('ITVCE', 'ITROM',  530, 'Frecciarossa'),
+    ('ITVRS', 'ITBLN',  110, 'Frecciarossa'),
+    ('ITVRS', 'ITROM',  500, 'Frecciarossa'),
+    # Turin long-distance Frecciarossa
+    ('ITTRN', 'ITBLN',  295, 'Frecciarossa'),
+    ('ITTRN', 'ITFLO',  420, 'Frecciarossa'),
+    ('ITTRN', 'ITROM',  670, 'Frecciarossa'),
+    # Naples long-distance
+    ('ITNAP', 'ITFLO',  480, 'Frecciarossa'),
+    ('ITNAP', 'ITBLN',  470, 'Frecciarossa'),
+    ('ITNAP', 'ITTRN',  870, 'Frecciarossa'),
     # Genoa
     ('ITMIL', 'ITGOA',  145, 'Frecciabianca'),
     ('ITTRN', 'ITGOA',  170, 'Trenitalia'),
+    ('ITGOA', 'ITROM',  500, 'Intercity'),
     # Verona
     ('ITMIL', 'ITVRS',  157, 'Frecciarossa'),
     ('ITVCE', 'ITVRS',  115, 'Frecciarossa'),
@@ -730,6 +787,7 @@ _RAIL_EDGES = [
     ('ESMAD', 'ESMLG',  530, 'AVE'),
     # No international rail to Portugal (Madrid–Lisbon Talgo suspended 2020, AVE not yet built)
     ('PTLIS', 'PTOPO',  310, 'Alfa Pendular'),
+    ('ESSVQ', 'ESMLG',  210, 'Avant'),
     # ── Central / Eastern Europe ─────────────────────────────────────────────
     ('CZPRG', 'HUBUD',  540, 'EC'),
     ('CZPRG', 'PLWAW',  666, 'EC'),
