@@ -22,6 +22,24 @@ pytest                    # run the test suite (tests/test_meeting_finder.py)
 - Deployment uses gunicorn (`Procfile`: `gunicorn app:app`).
 - `SERPAPI_KEY` is read from `.env`; without it, live prices fall back to estimates.
 
+## Testing discipline
+
+- **Run `pytest` before every commit; never commit with the suite red.** The
+  tests are the source of truth for intended behaviour. If a change turns a test
+  red, decide in the SAME change whether the code is wrong or the test is stale,
+  and fix it — don't defer or commit around it.
+- **Many tests are string-match tests against `index.html` / `app.py`.** They
+  assert literal tokens: CSS class names (`.band-tag`), JS function names
+  (`bandTag`), selectors (`#${activeTableId} tbody tr`), and code fragments
+  (rounding/pricing calls). Renaming or removing any of these silently breaks
+  the matching test. After editing `index.html` or a pricing/rounding helper,
+  grep `tests/` for the old token and update the assertion together.
+- **Replacing a feature ≠ tweaking it.** When you swap one feature for another
+  (e.g. pctTag → band-tags), find its test class and rewrite it to cover the NEW
+  behaviour — don't leave a class asserting removed strings.
+- **Don't write tests ahead of the implementation without marking them**
+  `@pytest.mark.xfail`/`skip`, so "not built yet" never reads as "regressed".
+
 ## Data model (the non-obvious core)
 
 Everything routing-related is built **in-memory at startup**. Two of the four data
