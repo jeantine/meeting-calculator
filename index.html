@@ -1748,10 +1748,17 @@ async function selectDest(iata, row) {
   }
   const estTotalCarbon = roundSig(estTransportCarbon + hotelCarbonHdrTotal, 2);
 
+  const homeCount       = data.routes.filter(r => r.home).reduce((s, r) => s + r.count, 0);
+  const travellingAtt   = totalAtt - homeCount;
+
   const statParts = [];
-  statParts.push(`${totalAtt} traveller${totalAtt !== 1 ? 's' : ''}`);
+  if (travellingAtt > 0 && homeCount > 0) {
+    statParts.push(`${travellingAtt} traveller${travellingAtt !== 1 ? 's' : ''} · ${homeCount} local`);
+  } else {
+    statParts.push(`${totalAtt} traveller${totalAtt !== 1 ? 's' : ''}`);
+  }
   statParts.push(`total ${totalDist.toLocaleString()} km`);
-  statParts.push(`avg ${Math.round(totalDist/totalAtt).toLocaleString()} km/traveller`);
+  statParts.push(`avg ${Math.round(totalDist/totalAtt).toLocaleString()} km/attendee`);
   routeHeader.innerHTML = `
     <div class="dest-info">
       <div class="dest-city">${data.dest.city}, ${data.dest.country}</div>
@@ -1760,16 +1767,7 @@ async function selectDest(iata, row) {
   `;
 
   // Per-attendee routes
-  routeBody.innerHTML = data.routes.map(r => {
-    if (r.home) return `
-      <div class="attendee-route-block">
-        <div class="attendee-route-header">
-          <span class="att-city">${r.city}</span>
-          <span class="att-badge home">${HOME_ICON} Home city — no travel needed</span>
-          <span class="att-badge dist">${r.count} traveller${r.count>1?'s':''}</span>
-        </div>
-      </div>`;
-
+  routeBody.innerHTML = data.routes.filter(r => !r.home).map(r => {
     if (r.error) return `
       <div class="attendee-route-block">
         <div class="attendee-route-header">
