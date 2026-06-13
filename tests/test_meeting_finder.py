@@ -74,6 +74,7 @@ from app import (
     find_airports_by_city,
     find_best_route,
     find_meeting_destinations,
+    _round_sig,
     get_routes_for_destination,
     get_continent,
     haversine,
@@ -1856,7 +1857,7 @@ class TestFindMeetingDestinationsSameCity:
             {"city": "London", "iatas": ["LHR"], "count": 3},
             {"city": "London", "iatas": ["LHR"], "count": 2},
         ]
-        ranked, _ = find_meeting_destinations(attendees)
+        ranked, _, _g = find_meeting_destinations(attendees)
         assert len(ranked) > 0
         # London (city code GBLON) should top the list — zero cost for everyone.
         # The ranking now uses city_codes as primary keys, so LHR/LGW/etc. are
@@ -1870,7 +1871,7 @@ class TestFindMeetingDestinationsSameCity:
             {"city": "Vienna", "iatas": ["VIE"], "count": 1},
             {"city": "Vienna", "iatas": ["VIE"], "count": 4},
         ]
-        ranked, _ = find_meeting_destinations(attendees)
+        ranked, _, _g = find_meeting_destinations(attendees)
         assert len(ranked) > 0
 
     def test_home_city_has_zero_cost_in_results(self):
@@ -1878,7 +1879,7 @@ class TestFindMeetingDestinationsSameCity:
             {"city": "Paris", "iatas": ["CDG"], "count": 2},
             {"city": "Paris", "iatas": ["CDG"], "count": 1},
         ]
-        ranked, _ = find_meeting_destinations(attendees)
+        ranked, _, _g = find_meeting_destinations(attendees)
         # Rankings now use city_codes; CDG/ORY/FRPAR all collapse to FRPAR
         home = next((r for r in ranked if r["iata"] == "FRPAR"), None)
         assert home is not None, "FRPAR (Paris) not in results"
@@ -2739,7 +2740,7 @@ class TestHomeCityScoreConsistency:
             {"city": "Vienna",    "iatas": ["VIE"], "rail": "ATVIE", "count": 1},
             {"city": "Sheffield", "iatas": [],      "rail": "GBSHF", "count": 1},
         ]
-        ranked, home = find_meeting_destinations(attendees, top_n=30)
+        ranked, home, _ = find_meeting_destinations(attendees, top_n=30)
         overall_shf = self._find(ranked, "GBSHF")
         home_shf    = self._find(home,   "GBSHF")
         assert overall_shf is not None, "Sheffield missing from overall table"
@@ -2753,11 +2754,12 @@ class TestHomeCityScoreConsistency:
             {"city": "Vienna",    "iatas": ["VIE"], "rail": "ATVIE", "count": 1},
             {"city": "Sheffield", "iatas": [],      "rail": "GBSHF", "count": 1},
         ]
-        _, home = find_meeting_destinations(attendees, top_n=30)
+        _, home, _ = find_meeting_destinations(attendees, top_n=30)
         home_shf = self._find(home, "GBSHF")
         assert home_shf is not None
         cost, carbon = self._drilldown_totals(attendees, "GBSHF")
-        assert home_shf["est_cost"]   == cost
+        # est_cost is rounded to 2 significant figures (estimate error band).
+        assert home_shf["est_cost"]   == _round_sig(cost)
         assert home_shf["est_carbon"] == carbon
 
     def test_rail_only_home_carbon_reflects_air_leg(self):
@@ -2769,7 +2771,7 @@ class TestHomeCityScoreConsistency:
             {"city": "Vienna",    "iatas": ["VIE"], "rail": "ATVIE", "count": 1},
             {"city": "Sheffield", "iatas": [],      "rail": "GBSHF", "count": 1},
         ]
-        _, home = find_meeting_destinations(attendees, top_n=30)
+        _, home, _ = find_meeting_destinations(attendees, top_n=30)
         home_shf = self._find(home, "GBSHF")
         assert home_shf is not None
         assert home_shf["est_carbon"] > 100, (
@@ -2795,7 +2797,7 @@ class TestHomeCityScoreConsistency:
             ],
         ]
         for attendees in scenarios:
-            ranked, home = find_meeting_destinations(attendees, top_n=50)
+            ranked, home, _ = find_meeting_destinations(attendees, top_n=50)
             for h in home:
                 code = h.get("iata") or h.get("rail")
                 o = self._find(ranked, code)
@@ -2817,12 +2819,12 @@ class TestHomeCityScoreConsistency:
             {"city": "Sheffield", "iatas": [],      "rail": "GBSHF", "count": 1},
             {"city": "Munich",    "iatas": ["MUC"], "rail": "DEMUC", "count": 1},
         ]
-        _, home = find_meeting_destinations(attendees, top_n=50)
+        _, home, _ = find_meeting_destinations(attendees, top_n=50)
         for h in home:
             code = h.get("iata") or h.get("rail")
             cost, carbon = self._drilldown_totals(attendees, code)
-            assert h["est_cost"] == cost, (
-                f"{code}: home cost {h['est_cost']} != drilldown {cost}"
+            assert h["est_cost"] == _round_sig(cost), (
+                f"{code}: home cost {h['est_cost']} != rounded drilldown {_round_sig(cost)}"
             )
             assert h["est_carbon"] == carbon, (
                 f"{code}: home carbon {h['est_carbon']} != drilldown {carbon}"
@@ -3041,3 +3043,133 @@ class TestRailCountryCalibration:
         _, c_uk = estimate_rail_fare(d, 0, "GBLON", "GBMAN")
         _, c_it = estimate_rail_fare(d, 0, "ITMIL", "ITROM")
         assert c_uk == c_it == round(d * app_module.RAIL_CARBON_FACTOR, 1)
+
+
+# ─── Hotel line bug fixes ─────────────────────────────────────────────────────
+
+class TestHotelLineBackend:
+    """
+    Regression tests for two scenarios where hotel data was missing from the
+    API response, causing the hotel line to disappear in the detail view.
+
+    Fix 1: home cities outside an active continent filter were not in the
+    candidate pool, so _hotel_pp_by_dest never got populated for them —
+    hotel_per_person came back as 0.
+
+    Fix 2 (frontend): the detail-view JS lookup only searched overall + home,
+    missing destinations that appear only in the greenest tab.  Covered by
+    TestHotelLineFrontend below.
+
+    These tests call find_meeting_destinations() directly (not via HTTP) to
+    avoid consuming the 20/minute rate-limit budget shared by the test suite.
+    """
+
+    _ATTENDEES_MIXED = [
+        # London and Munich are in Europe; New York and Quito are not.
+        {"city": "London",   "iatas": ["LHR"], "rail": "GBLON", "count": 1},
+        {"city": "New York", "iatas": ["JFK"],                   "count": 1},
+        {"city": "Quito",    "iatas": ["UIO"],                   "count": 1},
+        {"city": "Munich",   "iatas": ["MUC"], "rail": "DEMUC", "count": 1},
+    ]
+
+    def test_home_city_outside_continent_filter_has_hotel_data(self):
+        """New York and Quito are home cities but not in Europe — they must
+        still carry hotel_per_person > 0 when nights > 0 and continent_filter
+        is 'Europe'."""
+        _, home, _ = find_meeting_destinations(
+            self._ATTENDEES_MIXED, nights=2, continent_filter="Europe"
+        )
+        non_europe = [h for h in home if h["continent"] != "Europe"]
+        assert len(non_europe) >= 2, (
+            "Expected at least 2 non-European home cities (New York, Quito)"
+        )
+        for h in non_europe:
+            assert h.get("hotel_per_person", 0) > 0, (
+                f"{h['city']} (outside continent filter) has hotel_per_person=0 "
+                f"— hotel line would be missing in the detail view"
+            )
+
+    def test_home_city_outside_filter_has_hotel_carbon(self):
+        """hotel_carbon_per_person must also be populated for out-of-filter home cities."""
+        _, home, _ = find_meeting_destinations(
+            self._ATTENDEES_MIXED, nights=2, continent_filter="Europe"
+        )
+        non_europe = [h for h in home if h["continent"] != "Europe"]
+        for h in non_europe:
+            assert h.get("hotel_carbon_per_person", 0) > 0, (
+                f"{h['city']} missing hotel_carbon_per_person"
+            )
+
+    def test_in_continent_home_city_still_has_hotel_data(self):
+        """Sanity check: in-continent home cities must be unaffected by the fix."""
+        _, home, _ = find_meeting_destinations(
+            self._ATTENDEES_MIXED, nights=2, continent_filter="Europe"
+        )
+        europe = [h for h in home if h["continent"] == "Europe"]
+        assert len(europe) >= 1
+        for h in europe:
+            assert h.get("hotel_per_person", 0) > 0, (
+                f"{h['city']} (in-continent) unexpectedly missing hotel_per_person"
+            )
+
+    def test_zero_nights_leaves_hotel_per_person_zero(self):
+        """When nights=0 hotel fields must be absent / zero — no regressions."""
+        _, home, _ = find_meeting_destinations(
+            self._ATTENDEES_MIXED, nights=0, continent_filter="Europe"
+        )
+        for h in home:
+            assert h.get("hotel_per_person", 0) == 0, (
+                f"{h['city']} has hotel_per_person={h.get('hotel_per_person')} "
+                f"even though nights=0"
+            )
+
+    def test_greenest_only_destination_has_hotel_data(self):
+        """A city that appears only in the greenest tab (not overall) must carry
+        hotel fields so the frontend detail view can render the hotel line.
+        Paris frequently lands here with London/New York/Quito/Munich attendees."""
+        overall, home, greenest = find_meeting_destinations(
+            self._ATTENDEES_MIXED, nights=2
+        )
+        overall_keys = {(e.get("iata") or e.get("rail")) for e in overall}
+        home_keys    = {(e.get("iata") or e.get("rail")) for e in home}
+        greenest_only = [
+            e for e in greenest
+            if (e.get("iata") or e.get("rail")) not in overall_keys | home_keys
+        ]
+        if not greenest_only:
+            pytest.skip("No greenest-only destination in this result set — skip")
+        for e in greenest_only:
+            assert e.get("hotel_per_person", 0) > 0, (
+                f"{e['city']} appears only in greenest tab but hotel_per_person=0"
+            )
+
+
+class TestHotelLineFrontend:
+    """
+    Frontend (index.html) regression tests for the hotel-line lookup bug.
+
+    The detail view builds allEntries by spreading overall + home + greenest.
+    Before the fix, greenest was omitted, so cities visible only in the Lowest
+    Carbon tab had no matching entry and the hotel block was skipped.
+    """
+
+    def test_hotel_detail_lookup_includes_greenest(self, html):
+        """The allEntries spread in the hotel detail block must include greenest."""
+        # Both spreads (header carbon total and hotel block) must include greenest.
+        assert "currentResults.greenest || []" in html, (
+            "allEntries in hotel detail view does not include currentResults.greenest"
+        )
+
+    def test_hotel_detail_lookup_count(self, html):
+        """There should be exactly two places that build allEntries for hotel
+        lookup — the header carbon total and the hotel block itself — and both
+        must include greenest."""
+        import re
+        matches = re.findall(
+            r"currentResults\.overall[^;]+currentResults\.home[^;]+currentResults\.greenest",
+            html,
+        )
+        assert len(matches) >= 2, (
+            f"Expected at least 2 allEntries constructions including greenest, "
+            f"found {len(matches)}"
+        )

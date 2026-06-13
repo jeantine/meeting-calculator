@@ -1013,6 +1013,20 @@ def dijkstra_all(origin):
     return best
 
 
+def _round_sig(value, sig=2):
+    """Round to `sig` significant figures (e.g. 1473 → 1500, 14732 → 15000).
+
+    The cost estimate carries ~15-20% error, so ranking on the exact dollar
+    figure implies false precision. Rounding to 2 significant figures snaps
+    near-ties into the same bucket (where hops/carbon then decide) while
+    auto-scaling with the magnitude of the total. Non-positive → 0.
+    """
+    if value is None or value <= 0:
+        return 0
+    digits = sig - int(math.floor(math.log10(value))) - 1
+    return int(round(value, digits))
+
+
 def find_meeting_destinations(attendees, top_n=10, continent_filter=None, nights=0):
     """
     attendees:        list of {'city': str, 'iatas': [str], 'rail': str|None,
@@ -1425,29 +1439,78 @@ def find_meeting_destinations(attendees, top_n=10, continent_filter=None, nights
     # _transport_scores: snapshot of transport-only costs (keyed by city_code)
     # _hotel_pp_by_dest: per-person nightly-rate × nights for each city (0 if n/a)
     _transport_scores: dict = dict(city_scores)
-    _hotel_pp_by_dest: dict = {}   # city_code → hotel cost per person per stay
+    _hotel_pp_by_dest: dict = {}        # city_code → hotel cost per person per stay
+    _hotel_carbon_pp_by_dest: dict = {}         # city_code → hotel CO₂e per person per stay
+    _hotel_carbon_is_estimate_by_dest: dict = {} # city_code → True when figure is an estimate
+    _travelling_by_dest: dict = {}      # city_code → attendees who don't live there
+
+    def _hotel_adjusted_fields(transport_cost, transport_carbon,
+                               hotel_pp, hotel_carbon_pp, hotel_is_est,
+                               travelling):
+        """Fold hotel cost + carbon into transport-only scores.
+
+        Shared by the overall AND home-city rankings so the two views can
+        never disagree on how the hotel contribution lands in the totals —
+        both cost and carbon are added on the same basis (per-person figure
+        × number of travelling attendees).
+        """
+        travelling = max(0, travelling)
+        hotel_cost_total   = hotel_pp * travelling
+        hotel_carbon_total = hotel_carbon_pp * travelling
+        total_cost   = transport_cost + hotel_cost_total
+        total_carbon = transport_carbon + hotel_carbon_total
+        # Cost figures rounded to 2 significant figures (see _round_sig). The
+        # headline (est_cost) is what the ranking sorts on; the transport leg of
+        # the breakdown absorbs the rounding residual so the parts always sum to
+        # the headline (est_transport + est_hotel == est_cost).
+        est_cost      = _round_sig(total_cost)
+        est_hotel     = _round_sig(hotel_cost_total)
+        est_transport = max(0, est_cost - est_hotel)
+        return {
+            'est_cost':                 est_cost,
+            'est_transport':            est_transport,
+            'est_hotel':                est_hotel,
+            'hotel_per_person':         round(hotel_pp),
+            'hotel_carbon_per_person':  hotel_carbon_pp,
+            'hotel_carbon_is_estimate': hotel_is_est,
+            'est_carbon':               _round_sig(total_carbon),
+            'avg_cost':                 _round_sig(total_cost / total_attendees),
+            'avg_carbon':               _round_sig(total_carbon / total_attendees),
+        }
+
+    from datetime import date as _date
+    _today_str = _date.today().strftime("%Y-%m-%d")
+
+    def _hotel_data_for(dest):
+        """Per-person hotel cost + carbon + estimate-flag for a destination.
+
+        Resolves the destination's city_code and country, then defers to the
+        hotel estimators. Used both by the candidate-pool pass below and (on
+        demand) by the home-city ranking, so a home city excluded from the
+        candidate pool by a continent filter still gets a hotel figure."""
+        dest_cc = dest if dest in CITIES else IATA_TO_CITY.get(dest)
+        dest_airports_h, _ = _dest_airports_and_rail(dest)
+        country_name_h = None
+        if dest_cc and dest_cc in CITIES:
+            country_name_h = CITIES[dest_cc].get('country')
+        elif dest_airports_h:
+            for _iata_h in dest_airports_h:
+                if _iata_h in AIRPORTS:
+                    country_name_h = AIRPORTS[_iata_h].get('country')
+                    break
+        elif dest in AIRPORTS:
+            country_name_h = AIRPORTS[dest].get('country')
+        return (
+            estimate_hotel_cost(dest_cc, nights, _today_str, country_name=country_name_h),
+            estimate_hotel_carbon(dest_cc, nights, country_name=country_name_h),
+            is_hotel_carbon_estimate(dest_cc, country_name=country_name_h),
+        )
 
     if nights > 0:
-        from datetime import date as _date
-        _today_str = _date.today().strftime("%Y-%m-%d")
         updated_scores = {}
         for dest, score in city_scores.items():
             total_hops, total_dist, t_price, t_carbon = score
-            dest_cc = dest if dest in CITIES else IATA_TO_CITY.get(dest)
-            # Resolve country name for the fallback lookup
-            dest_airports_h, _ = _dest_airports_and_rail(dest)
-            country_name_h = None
-            if dest_cc and dest_cc in CITIES:
-                country_name_h = CITIES[dest_cc].get('country')
-            elif dest_airports_h:
-                for _iata_h in dest_airports_h:
-                    if _iata_h in AIRPORTS:
-                        country_name_h = AIRPORTS[_iata_h].get('country')
-                        break
-            elif dest in AIRPORTS:
-                country_name_h = AIRPORTS[dest].get('country')
-            hotel_pp = estimate_hotel_cost(dest_cc, nights, _today_str,
-                                           country_name=country_name_h)
+            hotel_pp, hotel_carbon_pp, hotel_carbon_est_flag = _hotel_data_for(dest)
             # Count home attendees for this destination (they don't pay hotel)
             dest_airports2, dest_rail2 = _dest_airports_and_rail(dest)
             home_count = sum(
@@ -1458,13 +1521,14 @@ def find_meeting_destinations(attendees, top_n=10, continent_filter=None, nights
             )
             travelling = total_attendees - home_count
             if travelling > 0:
-                t_price += hotel_pp * travelling
+                t_price  += hotel_pp * travelling
+                t_carbon += hotel_carbon_pp * travelling
             _hotel_pp_by_dest[dest] = hotel_pp
+            _hotel_carbon_pp_by_dest[dest] = hotel_carbon_pp
+            _hotel_carbon_is_estimate_by_dest[dest] = hotel_carbon_est_flag
+            _travelling_by_dest[dest] = travelling
             updated_scores[dest] = (total_hops, total_dist, t_price, t_carbon)
         city_scores = updated_scores
-
-    # Sort by lowest cost, then lowest carbon
-    all_ranked = sorted(city_scores.items(), key=lambda x: (x[1][2], x[1][3]))
 
     # City codes for every attendee origin — used for the is_home flag
     all_origin_city_codes: set = set()
@@ -1474,49 +1538,73 @@ def find_meeting_destinations(attendees, top_n=10, continent_filter=None, nights
         if _a.get('rail'):
             all_origin_city_codes.add(_a['rail'])
 
-    ranked = []
-    for city_code, scores in all_ranked:
-        # Look up display info from CITIES (preferred) or raw AIRPORTS
-        if city_code in CITIES:
-            cinfo     = CITIES[city_code]
-            _airports = cinfo.get('airports', [])
-            continent = (AIRPORTS.get(_airports[0], {}).get('continent', 'Europe')
-                         if _airports else 'Europe')
-            info = {
-                'city':      cinfo['name'],
-                'country':   cinfo['country'],
-                'name':      cinfo['name'],
-                'continent': continent,
+    def _build_dest_list(sorted_scores, n):
+        """Turn a pre-sorted (city_code, scores) iterable into a ranked list."""
+        result = []
+        for city_code, scores in sorted_scores:
+            if city_code in CITIES:
+                cinfo     = CITIES[city_code]
+                _airports = cinfo.get('airports', [])
+                continent = (AIRPORTS.get(_airports[0], {}).get('continent', 'Europe')
+                             if _airports else 'Europe')
+                info = {
+                    'city':      cinfo['name'],
+                    'country':   cinfo['country'],
+                    'name':      cinfo['name'],
+                    'continent': continent,
+                }
+            elif city_code in AIRPORTS:
+                info = AIRPORTS[city_code]
+            else:
+                continue
+            total_hops, total_dist, _, _ = scores
+            _transport_only      = _transport_scores.get(city_code, scores)
+            _t_cost              = _transport_only[2]
+            _t_carbon            = _transport_only[3]
+            _hotel_pp            = _hotel_pp_by_dest.get(city_code, 0)
+            _hotel_carbon_pp     = _hotel_carbon_pp_by_dest.get(city_code, 0)
+            _hotel_carbon_is_est = _hotel_carbon_is_estimate_by_dest.get(city_code, False)
+            _travelling          = _travelling_by_dest.get(city_code, 0)
+            item = {
+                'iata':      city_code,
+                'city':      info.get('city', ''),
+                'country':   info.get('country', ''),
+                'name':      info.get('name', ''),
+                'continent': info.get('continent', 'Unknown'),
+                'total_hops': total_hops,
+                'total_dist': round(total_dist),
+                'avg_dist':   round(total_dist / total_attendees),
+                'avg_hops':   round(total_hops / total_attendees, 1),
+                'is_home':    city_code in all_origin_city_codes,
             }
-        elif city_code in AIRPORTS:
-            info = AIRPORTS[city_code]
-        else:
-            continue   # unknown code — skip
+            item.update(_hotel_adjusted_fields(
+                _t_cost, _t_carbon, _hotel_pp, _hotel_carbon_pp,
+                _hotel_carbon_is_est, _travelling))
+            result.append(item)
+            if len(result) == n:
+                break
+        return result
 
-        total_hops, total_dist, total_price, total_carbon = scores
-        _t_only    = _transport_scores.get(city_code, scores)[2]
-        _hotel_pp  = _hotel_pp_by_dest.get(city_code, 0)
-        ranked.append({
-            'iata':            city_code,
-            'city':            info.get('city', ''),
-            'country':         info.get('country', ''),
-            'name':            info.get('name', ''),
-            'continent':       info.get('continent', 'Unknown'),
-            'total_hops':      total_hops,
-            'total_dist':      round(total_dist),
-            'avg_dist':        round(total_dist / total_attendees),
-            'avg_hops':        round(total_hops / total_attendees, 1),
-            'est_cost':        round(total_price),
-            'est_transport':   round(_t_only),
-            'est_hotel':       round(total_price - _t_only),
-            'hotel_per_person': round(_hotel_pp),
-            'est_carbon':      round(total_carbon, 1),
-            'avg_cost':        round(total_price / total_attendees),
-            'avg_carbon':      round(total_carbon / total_attendees, 1),
-            'is_home':         city_code in all_origin_city_codes,
-        })
-        if len(ranked) == top_n:
-            break
+    # Selection is hops-first: the top-N cut favours the fewest-connection
+    # destinations, with the tab's metric as the tiebreak among equal-hop
+    # cities. (scores = total_hops, total_dist, t_price, t_carbon.) Cost is
+    # rounded to 2 sig figs in the key so near-ties don't turn on dollar
+    # differences inside the estimate's error band. The frontend then displays
+    # the chosen rows sorted by the tab's metric (cost / carbon).
+    # Selection uses hops-first so direct routes are preferred when picking the
+    # top-N cut.  The chosen rows are then re-sorted for display by the tab's
+    # primary metric (cost or carbon), with the other metric and hops as
+    # tiebreakers.
+    ranked = sorted(
+        _build_dest_list(
+            sorted(city_scores.items(),
+                   key=lambda x: (x[1][0], _round_sig(x[1][2]), _round_sig(x[1][3]))), top_n),
+        key=lambda d: (_round_sig(d['est_cost'] or 0), _round_sig(d['est_carbon'] or 0), d['avg_hops']))
+    greenest = sorted(
+        _build_dest_list(
+            sorted(city_scores.items(),
+                   key=lambda x: (x[1][0], _round_sig(x[1][3]), _round_sig(x[1][2]))), top_n),
+        key=lambda d: (_round_sig(d['est_carbon'] or 0), _round_sig(d['est_cost'] or 0), d['avg_hops']))
 
     # ── Home city rankings ────────────────────────────────────────────────
     # A home city is just another candidate destination, so score it with the
@@ -1551,12 +1639,18 @@ def find_meeting_destinations(attendees, top_n=10, continent_filter=None, nights
 
     ranked_home = []
     def _home_sort_key(item):
+        # Mirror the Lowest Cost selection: cost first, then carbon, then hops —
+        # the cost/carbon terms inclusive of the hotel contribution for
+        # travelling attendees.
         home_code = item[0]
         _, scores, local_count = item[1]
-        transport_cost = scores[2]
-        hotel_pp_h = _hotel_pp_by_dest.get(home_code, 0)
-        hotel_cost = hotel_pp_h * max(0, total_attendees - local_count)
-        return (transport_cost + hotel_cost, scores[3])
+        travelling     = max(0, total_attendees - local_count)
+        hotel_pp_h     = _hotel_pp_by_dest.get(home_code, 0)
+        hotel_carbon_h = _hotel_carbon_pp_by_dest.get(home_code, 0)
+        total_hops     = scores[0]
+        total_cost     = scores[2] + hotel_pp_h * travelling
+        total_carbon   = scores[3] + hotel_carbon_h * travelling
+        return (_round_sig(total_cost), _round_sig(total_carbon), total_hops)
     for home_code, (display_code, scores, local_count) in sorted(
             home_scores.items(), key=_home_sort_key):
         total_hops, total_dist, total_price, total_carbon = scores
@@ -1590,31 +1684,39 @@ def find_meeting_destinations(attendees, top_n=10, continent_filter=None, nights
             disp_name  = info.get('name', '')
             continent  = info.get('continent', 'Unknown')
 
-        _hotel_pp_h    = _hotel_pp_by_dest.get(home_code, 0)
-        _hotel_total_h = round(_hotel_pp_h * max(0, total_attendees - local_count))
-        ranked_home.append({
-                'iata':             iata_field,
-                'rail':             rail_field,
-                'city':             city_name,
-                'country':          country,
-                'name':             disp_name,
-                'continent':        continent,
-                'home_city':        city_name,
-                'local_count':      local_count,
-                'total_hops':       total_hops,
-                'total_dist':       round(total_dist),
-                'avg_dist':         round(total_dist / total_attendees),
-                'avg_hops':         round(total_hops / total_attendees, 1),
-                'est_cost':         round(total_price) + _hotel_total_h,
-                'est_transport':    round(total_price),
-                'est_hotel':        _hotel_total_h,
-                'hotel_per_person': round(_hotel_pp_h),
-                'est_carbon':       round(total_carbon, 1),
-                'avg_cost':         round((total_price + _hotel_total_h) / total_attendees),
-                'avg_carbon':       round(total_carbon / total_attendees, 1),
-            })
+        # scores from _score_destination is transport-only; fold the hotel
+        # contribution in via the SAME assembler the overall ranking uses.
+        # A home city outside an active continent filter never entered the
+        # candidate pool, so its hotel figure is absent — compute it on demand
+        # so home cities always show a hotel line (travellers still need rooms).
+        if nights > 0 and home_code not in _hotel_pp_by_dest:
+            (_hotel_pp_by_dest[home_code],
+             _hotel_carbon_pp_by_dest[home_code],
+             _hotel_carbon_is_estimate_by_dest[home_code]) = _hotel_data_for(home_code)
+        _hotel_pp_h            = _hotel_pp_by_dest.get(home_code, 0)
+        _hotel_carbon_pp_h     = _hotel_carbon_pp_by_dest.get(home_code, 0)
+        _hotel_carbon_is_est_h = _hotel_carbon_is_estimate_by_dest.get(home_code, False)
+        _travelling_h          = total_attendees - local_count
+        home_item = {
+                'iata':                    iata_field,
+                'rail':                    rail_field,
+                'city':                    city_name,
+                'country':                 country,
+                'name':                    disp_name,
+                'continent':               continent,
+                'home_city':               city_name,
+                'local_count':             local_count,
+                'total_hops':              total_hops,
+                'total_dist':              round(total_dist),
+                'avg_dist':                round(total_dist / total_attendees),
+                'avg_hops':                round(total_hops / total_attendees, 1),
+            }
+        home_item.update(_hotel_adjusted_fields(
+            total_price, total_carbon, _hotel_pp_h, _hotel_carbon_pp_h,
+            _hotel_carbon_is_est_h, _travelling_h))
+        ranked_home.append(home_item)
 
-    return ranked, ranked_home
+    return ranked, ranked_home, greenest
 
 
 def get_routes_for_destination(attendees, dest_iata):
@@ -1917,8 +2019,8 @@ def get_routes_for_destination(attendees, dest_iata):
                 'dist_km':          round(best_rail_dist),
                 'est_price_person': rail_price * 2,
                 'est_price_group':  rail_price * 2 * a['count'],
-                'est_carbon_person':round(rail_carbon * 2, 1),
-                'est_carbon_group': round(rail_carbon * 2 * a['count'], 1),
+                'est_carbon_person':_round_sig(rail_carbon * 2),
+                'est_carbon_group': _round_sig(rail_carbon * 2 * a['count']),
                 'legs':             legs,
             })
         elif use_hybrid:
@@ -1969,8 +2071,8 @@ def get_routes_for_destination(attendees, dest_iata):
                 'dist_km':          round(hyb['total_dist']),
                 'est_price_person': hyb['total_price'] * 2,
                 'est_price_group':  hyb['total_price'] * 2 * a['count'],
-                'est_carbon_person':round(hyb['total_carbon'] * 2, 1),
-                'est_carbon_group': round(hyb['total_carbon'] * 2 * a['count'], 1),
+                'est_carbon_person':_round_sig(hyb['total_carbon'] * 2),
+                'est_carbon_group': _round_sig(hyb['total_carbon'] * 2 * a['count']),
                 'legs':             legs,
             })
         elif use_gateway:
@@ -2021,8 +2123,8 @@ def get_routes_for_destination(attendees, dest_iata):
                 'dist_km':          round(gw['total_dist']),
                 'est_price_person': gw['total_price'] * 2,
                 'est_price_group':  gw['total_price'] * 2 * a['count'],
-                'est_carbon_person':round(gw['total_carbon'] * 2, 1),
-                'est_carbon_group': round(gw['total_carbon'] * 2 * a['count'], 1),
+                'est_carbon_person':_round_sig(gw['total_carbon'] * 2),
+                'est_carbon_group': _round_sig(gw['total_carbon'] * 2 * a['count']),
                 'legs':             legs,
             })
         else:
@@ -2053,8 +2155,8 @@ def get_routes_for_destination(attendees, dest_iata):
                 'dist_km':          round(best_air_dist),
                 'est_price_person': air_price * 2,
                 'est_price_group':  air_price * 2 * a['count'],
-                'est_carbon_person':round(air_carbon * 2, 1),
-                'est_carbon_group': round(air_carbon * 2 * a['count'], 1),
+                'est_carbon_person':_round_sig(air_carbon * 2),
+                'est_carbon_group': _round_sig(air_carbon * 2 * a['count']),
                 'legs':             legs,
             })
     return results
@@ -2330,6 +2432,139 @@ _HOTEL_COUNTRY_FALLBACK: dict[str, int] = {
 }
 _HOTEL_DEFAULT_RATE = 100   # USD/night for countries not in the fallback table
 
+# ── HCMI hotel carbon intensity — city level (CHSB 2025) ─────────────────────
+# Median HCMI Rooms Footprint (kgCO₂e) per occupied room per night, NonResort
+# segment, from the Cornell Hotel Sustainability Benchmarking Index 2025
+# (Greenview).  Keyed by city_code matching the CITIES dict.
+#
+# Tier 1: city-level CHSB 2025 median (most accurate)
+_HOTEL_CARBON_CITY: dict[str, float] = {
+    # ── United Kingdom ───────────────────────────────────────────────────────
+    'GBLON': 10.41, 'GBEDB':  8.31, 'GBGLA':  9.16, 'GBMAN': 10.22,
+    'GBBRS':  9.96, 'GBNEW':  9.72, 'GBCDF': 12.98, 'GBSOU':  5.55,
+    'GBSHF': 11.38, 'GBNOT': 12.19, 'GBABZ': 10.24,
+    # ── France ──────────────────────────────────────────────────────────────
+    'FRPAR':  7.26, 'FRLYS':  5.76, 'FRMRS':  5.65, 'FRNIC':  4.82,
+    'FRBOD':  4.84, 'FRTLS':  7.54, 'FRSXB':  4.98,
+    # ── Belgium / Netherlands ────────────────────────────────────────────────
+    'BEBRU':  9.55, 'NLAMS': 11.99, 'NLRTM':  8.49, 'BEANR': 15.74,
+    # ── Germany ─────────────────────────────────────────────────────────────
+    'DEFRA': 15.18, 'DEBER': 15.31, 'DEMUC': 14.22, 'DEHAM': 11.85,
+    'DECGN': 15.32, 'DESTT': 12.04, 'DEDUS': 12.96, 'DENUR': 11.46,
+    'DEDRS': 11.46,
+    # ── Switzerland ─────────────────────────────────────────────────────────
+    'CHZRH':  4.77, 'CHGVA':  9.50,
+    # ── Austria ─────────────────────────────────────────────────────────────
+    'ATVIE':  8.67,
+    # ── Italy ───────────────────────────────────────────────────────────────
+    'ITMIL': 17.89, 'ITROM': 18.29, 'ITFLO': 14.91,
+    'ITVCE': 17.61, 'ITNAP': 16.44,
+    # ── Spain / Portugal ────────────────────────────────────────────────────
+    'ESMAD': 10.99, 'ESBCN': 11.55, 'ESVLC': 11.45,
+    'PTLIS':  8.99, 'PTOPO': 12.63,
+    # ── Czech Republic / Slovakia / Hungary / Romania ───────────────────────
+    'CZPRG': 23.03, 'SKBTS': 13.91, 'HUBUD': 20.23, 'ROBUH': 16.68,
+    # ── Poland ──────────────────────────────────────────────────────────────
+    'PLWAW': 29.47, 'PLGDN': 17.03,
+    # ── Western Balkans / SE Europe ─────────────────────────────────────────
+    'HRZAG': 12.63, 'RSBEG': 37.23, 'GRATH': 18.66, 'TRIST': 31.64,
+    # ── Scandinavia ─────────────────────────────────────────────────────────
+    'DKCPH':  8.68,
+}
+
+# ── HCMI hotel carbon intensity — country level (CHSB 2025) ──────────────────
+# Tier 2: country-level CHSB 2025 median (used when city not in Tier 1).
+# Countries marked "est." have no CHSB data; values are regional estimates
+# based on neighbouring-country CHSB figures and national grid mix.
+# Keyed by the full country name as stored in AIRPORTS / CITIES.
+_HOTEL_CARBON_KG: dict[str, float] = {
+    # ── CHSB 2025 country medians ────────────────────────────────────────────
+    'United Kingdom':       10.03,
+    'France':                7.0,
+    'Germany':              13.51,
+    'Switzerland':           5.99,
+    'Austria':               8.67,
+    'Belgium':              10.31,
+    'Netherlands':          12.62,
+    'Finland':              11.08,
+    'Ireland':              13.86,
+    'Italy':                16.64,
+    'Spain':                10.99,
+    'Portugal':             12.26,
+    'Greece':               16.31,
+    'Czech Republic':       22.05,
+    'Slovakia':             10.22,
+    'Hungary':              19.24,
+    'Romania':              16.68,
+    'Poland':               25.07,
+    'Turkey':               29.19,
+    'Israel':               36.06,
+    'Russia':               21.51,
+    'Kazakhstan':           42.0,
+    'United States':        15.05,
+    'Canada':                9.99,
+    'Australia':            29.9,
+    'Japan':                30.11,
+    'China':                42.0,
+    'India':                51.1,
+    'Mexico':               18.37,
+    'South Africa':         29.4,
+    'United Arab Emirates': 42.73,
+    'Brazil':               11.62,
+    # ── Regional estimates (no CHSB country data) ────────────────────────────
+    'Luxembourg':           11.0,   # est. — ~Belgium/Germany average
+    'Monaco':                7.0,   # est. — uses French grid
+    'Norway':                6.0,   # est. — near-100 % hydro
+    'Sweden':                7.0,   # est. — hydro + nuclear, ~France
+    'Denmark':               9.0,   # est. — wind-dominant grid (CPH CHSB: 8.68)
+    'Bulgaria':             24.0,   # est. — coal + nuclear grid
+    'Slovenia':             11.0,   # est. — hydro + nuclear, ~Croatia CHSB
+    'Croatia':              12.0,   # est. — Zagreb CHSB city: 12.63
+    'Serbia':               35.0,   # est. — coal-heavy; Belgrade CHSB city: 37.23
+    'Estonia':              18.0,   # est. — oil shale + renewables, transitioning
+    'Latvia':                8.0,   # est. — hydro-dominant
+    'Lithuania':            12.0,   # est. — gas + renewables
+    'Ukraine':              15.0,   # est. — nuclear + renewables
+}
+_HOTEL_CARBON_DEFAULT = 20.0   # Tier 3: global fallback for unknown countries
+
+# Countries whose Tier-2 entry is a regional estimate, not a CHSB-validated figure.
+# Used to decide whether to label the figure "HCMI" or "est." in the UI.
+_HOTEL_CARBON_ESTIMATED_COUNTRIES: frozenset = frozenset({
+    'Luxembourg', 'Monaco', 'Norway', 'Sweden', 'Denmark',
+    'Bulgaria', 'Slovenia', 'Croatia', 'Serbia',
+    'Estonia', 'Latvia', 'Lithuania', 'Ukraine',
+})
+
+
+def estimate_hotel_carbon(city_code: str | None, nights: int,
+                          country_name: str | None = None) -> float:
+    """kg CO₂e per person for the full stay, using HCMI methodology (CHSB 2025).
+
+    Resolution order:
+      1. City-level CHSB 2025 median (_HOTEL_CARBON_CITY)
+      2. Country-level CHSB 2025 median (_HOTEL_CARBON_KG)
+      3. Global default of 20 kg CO₂e/room/night
+
+    Always returns a float ≥ 0 (never None).
+    """
+    rate = (_HOTEL_CARBON_CITY.get(city_code) if city_code else None)
+    if rate is None:
+        rate = (_HOTEL_CARBON_KG.get(country_name) if country_name else None)
+    if rate is None:
+        rate = _HOTEL_CARBON_DEFAULT
+    return round(rate * nights, 1)
+
+
+def is_hotel_carbon_estimate(city_code: str | None,
+                              country_name: str | None = None) -> bool:
+    """Return True when the carbon figure is from an estimate, not CHSB data."""
+    if city_code and city_code in _HOTEL_CARBON_CITY:
+        return False
+    if country_name and country_name in _HOTEL_CARBON_KG:
+        return country_name in _HOTEL_CARBON_ESTIMATED_COUNTRIES
+    return True  # global default fallback
+
 
 def estimate_hotel_cost(city_code: str | None, nights: int,
                         outbound_date_str: str,
@@ -2601,9 +2836,9 @@ def find_destinations():
     nights = max(0, min(30, nights))
     log.info("find_destinations: %d attendees, continent_filter=%s, nights=%d",
              len(attendees), continent_filter, nights)
-    ranked, ranked_home = find_meeting_destinations(
+    ranked, ranked_home, greenest = find_meeting_destinations(
         attendees, continent_filter=continent_filter, nights=nights)
-    return jsonify({'overall': ranked, 'home': ranked_home,
+    return jsonify({'overall': ranked, 'home': ranked_home, 'greenest': greenest,
                     'continent_filter': continent_filter, 'nights': nights})
 
 @app.route('/api/get_routes', methods=['POST'])
@@ -2752,7 +2987,7 @@ def get_live_prices():
                 carbon_live = False
                 sources.add(rp['source'])
 
-        carbon_per_person = round(carbon_per_person, 1) if carbon_per_person else None
+        carbon_per_person = _round_sig(carbon_per_person) if carbon_per_person else None
 
         if sources == {'live'}:
             source = 'live'
@@ -2761,7 +2996,7 @@ def get_live_prices():
         else:
             source = 'estimate'
         group_total  = price_per_person * r['count']
-        group_carbon = round(carbon_per_person * r['count'], 1) if carbon_per_person else None
+        group_carbon = _round_sig(carbon_per_person * r['count']) if carbon_per_person else None
         total_price += group_total
         if group_carbon: total_carbon += group_carbon
 
@@ -2797,26 +3032,42 @@ def get_live_prices():
                      else AIRPORTS.get(dest_iata, {}).get('country'))
     hotel_per_person = estimate_hotel_cost(dest_city_code, nights, outbound_str,
                                            country_name=_dest_country) if nights > 0 else None
+    hotel_carbon_per_person = (_round_sig(estimate_hotel_carbon(dest_city_code, nights,
+                                                     country_name=_dest_country))
+                               if nights > 0 else None)
+    hotel_carbon_is_estimate = (is_hotel_carbon_estimate(dest_city_code,
+                                                         country_name=_dest_country)
+                                if nights > 0 else None)
     # Count non-home travellers
     travelling_count = sum(
         r['count'] for r in results
         if not r.get('home') and not r.get('error')
     )
-    hotel_total = hotel_per_person * travelling_count if hotel_per_person is not None else None
+    hotel_total        = hotel_per_person * travelling_count if hotel_per_person is not None else None
+    hotel_carbon_total = (_round_sig(hotel_carbon_per_person * travelling_count)
+                          if hotel_carbon_per_person is not None else None)
     dest_city_name = CITIES[dest_city_code]['name'] if dest_city_code and dest_city_code in CITIES else None
 
+    transport_carbon_kg = _round_sig(total_carbon) if total_carbon else None
+    total_carbon_kg = (_round_sig(total_carbon + (hotel_carbon_total or 0))
+                       if total_carbon else None)
+
     return jsonify({
-        'results':              results,
-        'total_price':          total_price,
-        'total_carbon_kg':      round(total_carbon, 1) if total_carbon else None,
-        'dest_iata':            dest_iata,
-        'outbound_date':        outbound_str,
-        'return_date':          return_str,
-        'hotel_per_person':     hotel_per_person,
-        'hotel_total':          hotel_total,
-        'hotel_nights':         nights,
-        'hotel_city':           dest_city_name,
-        'travelling_count':     travelling_count,
+        'results':                  results,
+        'total_price':              total_price,
+        'total_carbon_kg':          total_carbon_kg,
+        'transport_carbon_kg':      transport_carbon_kg,
+        'dest_iata':                dest_iata,
+        'outbound_date':            outbound_str,
+        'return_date':              return_str,
+        'hotel_per_person':         hotel_per_person,
+        'hotel_total':              hotel_total,
+        'hotel_carbon_per_person':  hotel_carbon_per_person,
+        'hotel_carbon_total':       hotel_carbon_total,
+        'hotel_carbon_is_estimate': hotel_carbon_is_estimate,
+        'hotel_nights':             nights,
+        'hotel_city':               dest_city_name,
+        'travelling_count':         travelling_count,
     })
 
 
