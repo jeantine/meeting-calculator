@@ -2019,8 +2019,8 @@ def get_routes_for_destination(attendees, dest_iata):
                 'dist_km':          round(best_rail_dist),
                 'est_price_person': rail_price * 2,
                 'est_price_group':  rail_price * 2 * a['count'],
-                'est_carbon_person':_round_sig(rail_carbon * 2),
-                'est_carbon_group': _round_sig(rail_carbon * 2 * a['count']),
+                'est_carbon_person':round(rail_carbon * 2, 1),
+                'est_carbon_group': round(rail_carbon * 2 * a['count'], 1),
                 'legs':             legs,
             })
         elif use_hybrid:
@@ -2071,8 +2071,8 @@ def get_routes_for_destination(attendees, dest_iata):
                 'dist_km':          round(hyb['total_dist']),
                 'est_price_person': hyb['total_price'] * 2,
                 'est_price_group':  hyb['total_price'] * 2 * a['count'],
-                'est_carbon_person':_round_sig(hyb['total_carbon'] * 2),
-                'est_carbon_group': _round_sig(hyb['total_carbon'] * 2 * a['count']),
+                'est_carbon_person':round(hyb['total_carbon'] * 2, 1),
+                'est_carbon_group': round(hyb['total_carbon'] * 2 * a['count'], 1),
                 'legs':             legs,
             })
         elif use_gateway:
@@ -2123,8 +2123,8 @@ def get_routes_for_destination(attendees, dest_iata):
                 'dist_km':          round(gw['total_dist']),
                 'est_price_person': gw['total_price'] * 2,
                 'est_price_group':  gw['total_price'] * 2 * a['count'],
-                'est_carbon_person':_round_sig(gw['total_carbon'] * 2),
-                'est_carbon_group': _round_sig(gw['total_carbon'] * 2 * a['count']),
+                'est_carbon_person':round(gw['total_carbon'] * 2, 1),
+                'est_carbon_group': round(gw['total_carbon'] * 2 * a['count'], 1),
                 'legs':             legs,
             })
         else:
@@ -2155,8 +2155,8 @@ def get_routes_for_destination(attendees, dest_iata):
                 'dist_km':          round(best_air_dist),
                 'est_price_person': air_price * 2,
                 'est_price_group':  air_price * 2 * a['count'],
-                'est_carbon_person':_round_sig(air_carbon * 2),
-                'est_carbon_group': _round_sig(air_carbon * 2 * a['count']),
+                'est_carbon_person':round(air_carbon * 2, 1),
+                'est_carbon_group': round(air_carbon * 2 * a['count'], 1),
                 'legs':             legs,
             })
     return results

@@ -1088,8 +1088,11 @@ class TestAutoFocusFirstRow:
     def test_first_row_focused_after_find(self, html):
         assert "focusDest(firstRow.dataset.iata, firstRow)" in html
 
-    def test_first_row_queried_from_overall_table(self, html):
-        assert "overallTable tbody tr" in html or "#overallTable tbody tr" in html
+    def test_first_row_queried_from_active_table(self, html):
+        # The first row is queried from whichever results table is active after
+        # Find; overallTable is one of the mapped targets.
+        assert "#${activeTableId} tbody tr" in html
+        assert "overall: 'overallTable'" in html
 
     def test_find_button_blurred_before_focusing_row(self, html):
         """
@@ -1103,14 +1106,18 @@ class TestAutoFocusFirstRow:
 
 class TestFindResetsTab:
     """
-    If the user was on the 'Attendee Home Cities' tab when they click
-    Find Best Locations, the view must switch back to Top 10 Overall.
+    Find tab behaviour: a fresh search (no prior results) opens the Home
+    cities tab, while a re-run (continent filter / attendee count edit)
+    preserves whichever tab was active. Both the tab button and its panel
+    are activated for the chosen tab.
     """
 
-    def test_find_sets_overall_tab_active(self, html):
-        assert "tab-overall" in html
-        # Both the tab button and the panel must be activated
-        assert 'querySelector(\'.tab[data-tab="overall"]\').classList.add(\'active\')' in html
+    def test_find_defaults_to_home_on_fresh_search(self, html):
+        # Fresh search -> Home; re-run -> keep active tab.
+        assert "const tabToShow = isRerun ? activeTabBefore : 'home'" in html
+        # Both the tab button and the panel are activated for tabToShow.
+        assert '.tab[data-tab="${tabToShow}"]' in html
+        assert "getElementById(`tab-${tabToShow}`).classList.add('active')" in html
 
     def test_find_removes_active_from_all_tabs(self, html):
         assert "querySelectorAll('.tab').forEach" in html
@@ -1280,55 +1287,56 @@ class TestHomeAttendeesColumn:
             assert row["local_count"] > 0
 
 
-# ─── 21. HTML: Percentage-above-lowest tags ──────────────────────────────────
+# ─── 21. HTML: Low/High band tags ────────────────────────────────────────────
 
-class TestPctTags:
+class TestBandTags:
     """
-    Each cost and carbon cell in the destination table should show a small
-    badge indicating how far above the lowest value in the result set the
-    row is — mirroring the Google Flights carbon annotation pattern.
+    Each cost and carbon cell shows a Low/High band badge indicating where the
+    value sits relative to the spread of ALL options across tabs (mean ± K·SD).
+    Average values are left unbadged. This replaced the earlier
+    'percentage above lowest' tags.
     """
 
-    def test_pct_tag_css_class_exists(self, html):
-        assert ".pct-tag" in html
+    def test_band_tag_css_classes_exist(self, html):
+        assert ".band-tag" in html
+        assert ".band-low" in html
+        assert ".band-high" in html
 
-    def test_pct_lowest_css_class_exists(self, html):
-        assert ".pct-lowest" in html
+    def test_band_tag_helper_function_exists(self, html):
+        assert "function bandTag" in html
 
-    def test_pct_above_css_class_exists(self, html):
-        assert ".pct-above" in html
+    def test_band_stats_helpers_exist(self, html):
+        # The banding maths: stats (mean/spread), cutoffs, and classification.
+        assert "function bandStats" in html
+        assert "function bandCuts" in html
+        assert "function bandOf" in html
 
-    def test_pct_tag_helper_function_exists(self, html):
-        assert "function pctTag" in html
+    def test_band_tag_emits_low_and_high_labels(self, html):
+        # bandTag labels the two outer bands 'Low' / 'High'; the legend renders
+        # the same two badge spans.
+        assert 'band-low">Low</span>' in html
+        assert 'band-high">High</span>' in html
 
-    def test_pct_tag_shows_lowest_for_minimum(self, html):
-        # The pctTag function must return the "Lowest" label when val <= min
-        assert "pct-lowest" in html
-        assert "Lowest" in html
+    def test_band_tag_leaves_average_unbadged(self, html):
+        # Only 'low' and 'high' produce a badge; medium returns an empty string.
+        assert "b !== 'low' && b !== 'high'" in html
 
-    def test_pct_tag_shows_percentage_for_above_minimum(self, html):
-        # The pctTag function must compute a rounded percentage
-        assert "Math.round" in html
-        assert "pct-above" in html
+    def test_band_tag_called_for_cost_column(self, html):
+        # bandTag must be applied to est_cost across the row templates
+        assert html.count("bandTag(d.est_cost") >= 2   # overall + home (+ greenest)
 
-    def test_pct_tag_called_for_cost_column(self, html):
-        # pctTag must be applied to est_cost in both row templates
-        assert html.count("pctTag(d.est_cost") >= 2   # overall + home table
+    def test_band_tag_called_for_carbon_column(self, html):
+        assert html.count("bandTag(d.est_carbon") >= 2
 
-    def test_pct_tag_called_for_carbon_column(self, html):
-        # pctTag must be applied to est_carbon in both row templates
-        assert html.count("pctTag(d.est_carbon") >= 2
+    def test_band_stats_computed_from_cross_tab_union(self, html):
+        # Cost/carbon band stats are derived from the deduped union of all tabs.
+        assert "const costStats" in html
+        assert "const carbonStats" in html
+        assert "bandStats(" in html
 
-    def test_min_of_helper_exists(self, html):
-        assert "function minOf" in html
-
-    def test_minimums_computed_for_overall_table(self, html):
-        assert "minOverallCost" in html
-        assert "minOverallCarbon" in html
-
-    def test_minimums_computed_for_home_table(self, html):
-        assert "minHomeCost" in html
-        assert "minHomeCarbon" in html
+    def test_band_legend_rendered(self, html):
+        assert "function renderBandLegend" in html
+        assert 'id="bandLegend"' in html
 
 
 # ─── 22. HTML: Bare $ bug — live prices per-person ────────────────────────────
@@ -2758,9 +2766,11 @@ class TestHomeCityScoreConsistency:
         home_shf = self._find(home, "GBSHF")
         assert home_shf is not None
         cost, carbon = self._drilldown_totals(attendees, "GBSHF")
-        # est_cost is rounded to 2 significant figures (estimate error band).
+        # est_cost and est_carbon are both rounded to 2 significant figures
+        # (estimate error band); the drilldown sums per-leg values rounded to
+        # 1 dp, so compare against the sig-rounded total, not the raw sum.
         assert home_shf["est_cost"]   == _round_sig(cost)
-        assert home_shf["est_carbon"] == carbon
+        assert home_shf["est_carbon"] == _round_sig(carbon)
 
     def test_rail_only_home_carbon_reflects_air_leg(self):
         """The Sheffield home carbon must reflect the air leg of the Vienna
@@ -2826,8 +2836,8 @@ class TestHomeCityScoreConsistency:
             assert h["est_cost"] == _round_sig(cost), (
                 f"{code}: home cost {h['est_cost']} != rounded drilldown {_round_sig(cost)}"
             )
-            assert h["est_carbon"] == carbon, (
-                f"{code}: home carbon {h['est_carbon']} != drilldown {carbon}"
+            assert h["est_carbon"] == _round_sig(carbon), (
+                f"{code}: home carbon {h['est_carbon']} != rounded drilldown {_round_sig(carbon)}"
             )
 
 
