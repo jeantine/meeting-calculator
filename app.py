@@ -214,6 +214,11 @@ print(f"  Graph ready.")
 RAIL_CARBON_FACTOR = 0.006   # kg CO₂/pax-km for European high-speed rail
                               # (IEA/EEA figure for electrified HSR, no RFI)
 
+# A rail leg this short or shorter is treated as "a quick train": it may win
+# even when it adds hops, and it is the only case in which a higher-hop
+# itinerary is allowed to beat a fewer-hop one (single-mode, hybrid, scoring).
+_SHORT_RAIL_KM = 300
+
 RAIL_STATIONS = {
     # ── United Kingdom ──────────────────────────────────────────────────────
     # Stations on green (high-speed) or purple (mainline) lines per Interrail 2026 map
@@ -867,6 +872,50 @@ for _start in _undirected:
 MAIN_AIRPORTS = max(_components, key=len) if _components else set()
 print(f"  Main network: {len(MAIN_AIRPORTS)} airports ({len(GRAPH) - len(MAIN_AIRPORTS)} stranded).")
 
+# ── Multi-airport cities OUTSIDE the CITIES rail network ────────────────────
+# CITIES groups European airports so a city is represented by all its airports
+# at both ends (Paris = CDG+ORY).  Non-CITIES cities had no such grouping, so a
+# multi-airport city like Bangkok was two independent destinations: a route to
+# DMK (no London nonstop) detoured via Madras while BKK (nonstop) was a separate
+# row.  Group them here too, by (city, country), so the destination side becomes
+# symmetric with the origin side (an attendee already carries all city airports).
+# Each city collapses to a single representative airport — the best-connected one
+# — which keys its ranking row; routing then lands each attendee at whichever of
+# the city's airports is best for them.
+_airports_by_city: dict = defaultdict(list)
+for _iata, _ainfo in AIRPORTS.items():
+    if _iata not in GRAPH or _iata not in MAIN_AIRPORTS or _iata in IATA_TO_CITY:
+        continue   # stranded, or already grouped by the CITIES rail network
+    _city = _ainfo.get('city', '').strip()
+    _country = _ainfo.get('country', '').strip()
+    if _city:
+        _airports_by_city[(_city.lower(), _country.lower())].append(_iata)
+
+AIRPORT_CITY_GROUP: dict = {}   # IATA → [sibling IATAs] (only multi-airport cities)
+AIRPORT_CITY_REPR:  dict = {}   # IATA → representative IATA (the ranking row key)
+for _grp_iatas in _airports_by_city.values():
+    if len(_grp_iatas) < 2:
+        continue
+    _ordered = sorted(_grp_iatas, key=lambda i: (-len(GRAPH.get(i, [])), i))
+    _repr = _ordered[0]   # best-connected airport is the canonical city row
+    for _i in _grp_iatas:
+        AIRPORT_CITY_GROUP[_i] = _ordered
+        AIRPORT_CITY_REPR[_i]  = _repr
+
+
+def city_airports(iata):
+    """Routable sibling airports for an airport's city (non-CITIES cities).
+
+    Returns all of the city's airports when it has several (e.g. BKK→[BKK, DMK]),
+    else just ``[iata]``.  Lets the destination side consider every airport a
+    city has, mirroring how an origin attendee already carries all of theirs."""
+    return AIRPORT_CITY_GROUP.get(iata, [iata])
+
+
+def city_repr(iata):
+    """Canonical representative airport for an airport's city (or itself)."""
+    return AIRPORT_CITY_REPR.get(iata, iata)
+
 AIRLINES = {}
 if os.path.exists(AIRLINES_FILE):
     with open(AIRLINES_FILE, newline='', encoding='utf-8') as f:
@@ -1027,6 +1076,45 @@ def _round_sig(value, sig=2):
     return int(round(value, digits))
 
 
+class _MixedRouteChoice:
+    """Hops-first picker for mixed (rail+air) itineraries — hybrid and gateway.
+
+    Both mixed modes choose a hub the same way, so they share this selector to
+    stop the two ever drifting apart again:
+
+      • feed every candidate via ``add()``;
+      • the winner (``best()``) is the candidate with the FEWEST total hops,
+        ties broken by price;
+      • EXCEPT a candidate whose rail leg is short (≤ ``_SHORT_RAIL_KM``) may win
+        on price alone — i.e. a higher-hop itinerary only wins when its train is
+        a quick hop, never because a long under-priced rail leg looks cheap.
+
+    The ``candidate`` payload is opaque (a dict for the route drilldown, a tuple
+    for the scoring maps); only ``hops``/``price``/``rail_km`` drive the choice.
+    """
+    __slots__ = ('_base', '_short')
+
+    def __init__(self):
+        self._base = None    # (hops, price, candidate) — fewest hops, then price
+        self._short = None   # (hops, price, candidate) — cheapest short-rail
+
+    def add(self, candidate, *, hops, price, rail_km):
+        if (self._base is None or hops < self._base[0]
+                or (hops == self._base[0] and price < self._base[1])):
+            self._base = (hops, price, candidate)
+        if rail_km <= _SHORT_RAIL_KM and (self._short is None
+                                          or price < self._short[1]):
+            self._short = (hops, price, candidate)
+
+    def best(self):
+        """The chosen candidate payload, or None if nothing was added."""
+        if self._base is None:
+            return None
+        if self._short is not None and self._short[1] < self._base[1]:
+            return self._short[2]
+        return self._base[2]
+
+
 def find_meeting_destinations(attendees, top_n=10, continent_filter=None, nights=0):
     """
     attendees:        list of {'city': str, 'iatas': [str], 'rail': str|None,
@@ -1099,7 +1187,9 @@ def find_meeting_destinations(attendees, top_n=10, continent_filter=None, nights
             continue
 
         rail_result = raw_rail_maps.get((iata_tuple, rail_station), {})
-        best_hybrid: dict = {}  # dest_iata → (price, carbon, hops, dist)
+        # Pick each destination's hub hops-first via the shared selector, so the
+        # ranking cost matches the get_routes_for_destination drilldown.
+        choices: dict = {}   # dest_iata → _MixedRouteChoice
 
         for hub_station, (rh, rd) in rail_result.items():
             if hub_station == rail_station:
@@ -1117,12 +1207,13 @@ def find_meeting_destinations(attendees, top_n=10, continent_filter=None, nights
                     _hub_air_cache[hub_airport] = dijkstra_all(hub_airport)
                 for dest_iata, (ah, ad) in _hub_air_cache[hub_airport].items():
                     air_p, air_c = estimate_fare(ad, ah, hub_airport, dest_iata)
-                    total_p = rail_p + air_p
-                    cur = best_hybrid.get(dest_iata)
-                    if cur is None or total_p < cur[0]:
-                        best_hybrid[dest_iata] = (total_p, rail_c + air_c, rh + ah, rd + ad)
+                    cand = (rail_p + air_p, rail_c + air_c, rh + ah, rd + ad)
+                    choices.setdefault(dest_iata, _MixedRouteChoice()).add(
+                        cand, hops=cand[2], price=cand[0], rail_km=rd)
 
-        hybrid_cost_maps[(iata_tuple, rail_station)] = best_hybrid
+        # dest_iata → (price, carbon, hops, dist)
+        hybrid_cost_maps[(iata_tuple, rail_station)] = {
+            dest_iata: choice.best() for dest_iata, choice in choices.items()}
 
     # ── Gateway cost maps (air-origin groups: fly to a hub, then train) ───
     # Mirror of hybrid for attendees who HAVE airports but are travelling to a
@@ -1139,7 +1230,9 @@ def find_meeting_destinations(attendees, top_n=10, continent_filter=None, nights
             gateway_cost_maps[(iata_tuple, rail_station)] = {}
             continue
         air_map = dist_maps[(iata_tuple, rail_station)]
-        best_gw: dict = {}
+        # Pick each destination's hub hops-first via the shared selector, so the
+        # ranking cost matches the get_routes_for_destination drilldown.
+        choices: dict = {}   # dest_station → _MixedRouteChoice
         for hub_station, hub_airports in STATION_TO_IATAS.items():
             # Cheapest flight from this group's origins to the hub airport
             fly_p = fly_c = fly_h = fly_d = None
@@ -1159,11 +1252,12 @@ def find_meeting_destinations(attendees, top_n=10, continent_filter=None, nights
                 if rd == 0:
                     continue   # same station — that's just the flight (air option)
                 r_p, r_c = estimate_rail_fare(rd, max(0, rh - 1), hub_station, dest_station)
-                total_p = fly_p + r_p
-                cur = best_gw.get(dest_station)
-                if cur is None or total_p < cur[0]:
-                    best_gw[dest_station] = (total_p, fly_c + r_c, fly_h + rh, fly_d + rd)
-        gateway_cost_maps[(iata_tuple, rail_station)] = best_gw
+                cand = (fly_p + r_p, fly_c + r_c, fly_h + rh, fly_d + rd)
+                choices.setdefault(dest_station, _MixedRouteChoice()).add(
+                    cand, hops=cand[2], price=cand[0], rail_km=rd)
+        # dest_station → (price, carbon, hops, dist)
+        gateway_cost_maps[(iata_tuple, rail_station)] = {
+            dest_station: choice.best() for dest_station, choice in choices.items()}
 
     all_origin_iatas = set(i for (iata_tuple, _) in unique_origins for i in iata_tuple)
 
@@ -1231,7 +1325,7 @@ def find_meeting_destinations(attendees, top_n=10, continent_filter=None, nights
         cc = IATA_TO_CITY.get(dest)
         if cc and cc in CITIES:
             return CITIES[cc]['airports'], CITIES[cc].get('rail')
-        return [dest], None
+        return city_airports(dest), None   # non-CITIES: all of the city's airports
 
     def _best_air_cost(amap, airports):
         """Fewest-hops-then-shortest air entry across a city's airports.
@@ -1328,7 +1422,6 @@ def find_meeting_destinations(attendees, top_n=10, continent_filter=None, nights
 
                 # ── Decide mode — mirror get_routes_for_destination exactly ──
                 # so the table totals match the route drilldown.
-                _SHORT_RAIL_KM = 300
 
                 # Best single-mode option (air vs rail).
                 single = None          # 'air' | 'rail'
@@ -1427,7 +1520,9 @@ def find_meeting_destinations(attendees, top_n=10, continent_filter=None, nights
     for dest, score in candidate_scores.items():
         if dest in CITIES:
             continue
-        cc = IATA_TO_CITY.get(dest) or dest
+        # Non-CITIES airports collapse to their city's representative airport, so
+        # a multi-airport city (Bangkok's BKK + DMK) is one row, not two.
+        cc = IATA_TO_CITY.get(dest) or city_repr(dest)
         if cc in canonical_cities:
             continue   # canonical candidate is authoritative for this city
         if cc not in city_scores or score[2] < city_scores[cc][2]:
@@ -1743,8 +1838,10 @@ def get_routes_for_destination(attendees, dest_iata):
         dest_airports = [i for i in _dest_cinfo['airports'] if i in GRAPH]
         dest_rail     = _dest_cinfo.get('rail')
     else:
-        # Non-CITIES destination (e.g. overseas airport)
-        dest_airports = [dest_iata] if dest_iata in GRAPH else []
+        # Non-CITIES destination (e.g. overseas airport).  Use ALL of the city's
+        # airports — so a route to Bangkok lands at the nonstop BKK rather than
+        # detouring to DMK via Madras — mirroring an origin's full airport list.
+        dest_airports = [i for i in city_airports(dest_iata) if i in GRAPH]
         dest_rail     = None
 
     # Pre-compute rail reachability FROM dest station — used by gateway-hybrid
@@ -1794,7 +1891,12 @@ def get_routes_for_destination(attendees, dest_iata):
         best_hybrid: dict | None = None
         if not a.get('iatas') and origin_rail:
             rail_reachable = dijkstra_rail_all(origin_rail)
-            _best_hyb_price = math.inf
+            # Pick the hub hops-first via the shared selector (see
+            # _MixedRouteChoice): a higher-hop itinerary only wins when its rail
+            # leg is a quick train.  Without this, an under-priced "train across
+            # Europe + short hop flight" beats the sane "train to a nearby hub +
+            # fly" (e.g. Lausanne → Balıkesir riding rail all the way to Istanbul).
+            choice = _MixedRouteChoice()
             for hub_station, (rh, rd) in rail_reachable.items():
                 if hub_station == origin_rail:
                     continue
@@ -1810,22 +1912,35 @@ def get_routes_for_destination(attendees, dest_iata):
                             continue
                         h_air_price, h_air_carbon = estimate_fare(air_dist, air_hops,
                                                                   hub_airport, _air_dst)
-                        total_price = h_rail_price + h_air_price
-                        if total_price < _best_hyb_price:
-                            _best_hyb_price = total_price
-                            hub_rail_path, _, _ = find_best_rail_route(origin_rail, hub_station)
-                            best_hybrid = {
-                                'rail_path':    hub_rail_path or [],
-                                'rail_hops':    rh,
-                                'rail_dist':    rd,
-                                'air_path':     air_path,
-                                'air_hops':     air_hops,
-                                'air_dist':     air_dist,
-                                'total_price':  total_price,
-                                'total_carbon': h_rail_carbon + h_air_carbon,
-                                'total_hops':   rh + air_hops,
-                                'total_dist':   rd + air_dist,
-                            }
+                        cand = {
+                            'hub_station':  hub_station,
+                            'rail_hops':    rh,
+                            'rail_dist':    rd,
+                            'air_path':     air_path,
+                            'air_hops':     air_hops,
+                            'air_dist':     air_dist,
+                            'total_price':  h_rail_price + h_air_price,
+                            'total_carbon': h_rail_carbon + h_air_carbon,
+                            'total_hops':   rh + air_hops,
+                            'total_dist':   rd + air_dist,
+                        }
+                        choice.add(cand, hops=cand['total_hops'],
+                                   price=cand['total_price'], rail_km=rd)
+            chosen_hyb = choice.best()
+            if chosen_hyb is not None:
+                hub_rail_path, _, _ = find_best_rail_route(origin_rail, chosen_hyb['hub_station'])
+                best_hybrid = {
+                    'rail_path':    hub_rail_path or [],
+                    'rail_hops':    chosen_hyb['rail_hops'],
+                    'rail_dist':    chosen_hyb['rail_dist'],
+                    'air_path':     chosen_hyb['air_path'],
+                    'air_hops':     chosen_hyb['air_hops'],
+                    'air_dist':     chosen_hyb['air_dist'],
+                    'total_price':  chosen_hyb['total_price'],
+                    'total_carbon': chosen_hyb['total_carbon'],
+                    'total_hops':   chosen_hyb['total_hops'],
+                    'total_dist':   chosen_hyb['total_dist'],
+                }
 
         # ── Gateway hybrid: fly to a hub near dest, then take the train ────
         # Fires whenever the destination has a rail station and the attendee
@@ -1841,18 +1956,11 @@ def get_routes_for_destination(attendees, dest_iata):
                 if _orig in GRAPH:
                     _origin_air_maps[_orig] = dijkstra_all(_orig)
 
-            _best_gw_price    = math.inf
-            _best_gw_origin   = None
-            _best_gw_airport  = None
-            _best_gw_station  = None
-            _best_gw_rh       = 0
-            _best_gw_rd       = 0.0
-            _best_gw_air_hops = 0
-            _best_gw_air_dist = 0.0
-            _best_gw_air_p    = 0.0
-            _best_gw_air_c    = 0.0
-            _best_gw_rail_p   = 0.0
-            _best_gw_rail_c   = 0.0
+            # Pick the gateway hub hops-first via the shared selector (see
+            # _MixedRouteChoice) — identical logic to the hybrid branch above, so
+            # a higher-hop "fly to a far hub + long train" never beats "fly to a
+            # near hub + short train" on an under-priced rail leg.
+            choice = _MixedRouteChoice()
 
             for gw_station, (rh, rd) in dest_rail_reach.items():
                 if gw_station == dest_rail:
@@ -1869,37 +1977,42 @@ def get_routes_for_destination(attendees, dest_iata):
                         air_hops, air_dist = air_result
                         a_p, a_c = estimate_fare(air_dist, air_hops,
                                                  origin_iata, gw_airport)
-                        total_p = a_p + gw_rail_p
-                        if total_p < _best_gw_price:
-                            _best_gw_price    = total_p
-                            _best_gw_origin   = origin_iata
-                            _best_gw_airport  = gw_airport
-                            _best_gw_station  = gw_station
-                            _best_gw_rh       = rh
-                            _best_gw_rd       = rd
-                            _best_gw_air_hops = air_hops
-                            _best_gw_air_dist = air_dist
-                            _best_gw_air_p    = a_p
-                            _best_gw_air_c    = a_c
-                            _best_gw_rail_p   = gw_rail_p
-                            _best_gw_rail_c   = gw_rail_c
+                        cand = {
+                            'origin':       origin_iata,
+                            'airport':      gw_airport,
+                            'station':      gw_station,
+                            'rail_hops':    rh,
+                            'rail_dist':    rd,
+                            'air_hops':     air_hops,
+                            'air_dist':     air_dist,
+                            'air_price':    a_p,
+                            'air_carbon':   a_c,
+                            'rail_price':   gw_rail_p,
+                            'rail_carbon':  gw_rail_c,
+                            'total_price':  a_p + gw_rail_p,
+                            'total_hops':   air_hops + rh,
+                        }
+                        choice.add(cand, hops=cand['total_hops'],
+                                   price=cand['total_price'], rail_km=rd)
 
-            if _best_gw_price < math.inf:
-                air_path, _, _ = find_best_route(_best_gw_origin, _best_gw_airport)
-                gw_to_dest_path, _, _ = find_best_rail_route(_best_gw_station, dest_rail)
+            chosen_gw = choice.best()
+
+            if chosen_gw is not None:
+                air_path, _, _ = find_best_route(chosen_gw['origin'], chosen_gw['airport'])
+                gw_to_dest_path, _, _ = find_best_rail_route(chosen_gw['station'], dest_rail)
                 best_gateway = {
                     'air_path':     air_path or [],
-                    'air_hops':     _best_gw_air_hops,
-                    'air_dist':     _best_gw_air_dist,
-                    'air_price':    _best_gw_air_p,
-                    'air_carbon':   _best_gw_air_c,
+                    'air_hops':     chosen_gw['air_hops'],
+                    'air_dist':     chosen_gw['air_dist'],
+                    'air_price':    chosen_gw['air_price'],
+                    'air_carbon':   chosen_gw['air_carbon'],
                     'rail_path':    gw_to_dest_path or [],
-                    'rail_hops':    _best_gw_rh,
-                    'rail_dist':    _best_gw_rd,
-                    'total_price':  _best_gw_price,
-                    'total_carbon': _best_gw_air_c + _best_gw_rail_c,
-                    'total_hops':   _best_gw_air_hops + _best_gw_rh,
-                    'total_dist':   _best_gw_air_dist + _best_gw_rd,
+                    'rail_hops':    chosen_gw['rail_hops'],
+                    'rail_dist':    chosen_gw['rail_dist'],
+                    'total_price':  chosen_gw['total_price'],
+                    'total_carbon': chosen_gw['air_carbon'] + chosen_gw['rail_carbon'],
+                    'total_hops':   chosen_gw['air_hops'] + chosen_gw['rail_hops'],
+                    'total_dist':   chosen_gw['air_dist'] + chosen_gw['rail_dist'],
                 }
 
         # ── No route at all ─────────────────────────────────────────────
@@ -1943,7 +2056,6 @@ def get_routes_for_destination(attendees, dest_iata):
         #     a mixed itinerary (e.g. Vienna→Sheffield: fly+train is 2 hops vs
         #     4 hops all-rail);
         #   • on a hop tie, keep the clean single-mode trip.
-        _SHORT_RAIL_KM = 300
 
         single_mode = None          # 'air' | 'rail'
         single_hops = single_dist = math.inf

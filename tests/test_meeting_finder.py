@@ -2735,6 +2735,88 @@ class TestEuropeanRail:
         assert "air"  in leg_modes, "Expected at least one air leg (fly to UK hub)"
         assert "rail" in leg_modes, "Expected at least one rail leg (train to Sheffield)"
 
+    def test_hybrid_does_not_ride_rail_across_europe_to_reach_a_far_hub(self, client):
+        """
+        Rail-only origin → air-only destination must take the train to a
+        *nearby* hub and fly, not ride rail across the continent to a distant
+        hub just because the long rail leg is under-priced.
+
+        Regression: Lausanne (rail-only) → Balıkesir (EDO, served only by short
+        hops from Istanbul).  The hybrid hub-picker minimised total fare with no
+        hops/distance guard, so it rode rail Lausanne→…→Istanbul (7 changes,
+        ~2500 km) then flew the 246 km hop SAW→EDO — beating "train to Zurich,
+        fly" by a few euros.  The fix makes hub choice hops-first, letting a
+        higher-hop itinerary win only when its rail leg is short
+        (≤ _SHORT_RAIL_KM).
+        """
+        payload = {
+            "attendees": [
+                {"city": "Lausanne", "iatas": [],      "rail": "CHLAS", "count": 1},
+                {"city": "London",   "iatas": ["LHR"], "rail": "GBLON", "count": 1},
+            ],
+            "dest_iata": "EDO",   # Balıkesir Körfez — reached only via Istanbul
+        }
+        res  = client.post("/api/get_routes", json=payload)
+        data = res.get_json()
+        assert res.status_code == 200
+
+        lausanne = next(r for r in data["routes"] if "Lausanne" in r["city"])
+        assert lausanne.get("mode") == "hybrid", (
+            f"Lausanne→Balıkesir should be a train-to-hub-then-fly hybrid, "
+            f"got mode={lausanne.get('mode')!r}"
+        )
+        legs      = lausanne.get("legs", [])
+        rail_legs = [l for l in legs if l.get("mode") == "rail"]
+        air_legs  = [l for l in legs if l.get("mode") == "air"]
+        assert air_legs, "Hybrid must include a flight"
+        # The rail portion must only reach a nearby hub — not cross the continent.
+        rail_km = sum(l.get("dist_km", 0) for l in rail_legs)
+        assert rail_km <= app_module._SHORT_RAIL_KM, (
+            f"Rail leg should be a quick hop to a nearby hub (≤"
+            f"{app_module._SHORT_RAIL_KM} km), got {rail_km} km across "
+            f"{len(rail_legs)} legs — rode rail too far"
+        )
+
+    def test_gateway_flies_to_nearest_hub_not_cheapest_long_train(self, client):
+        """
+        Gateway (fly to a hub, train the last leg) must pick the hub hops-first,
+        not by fare alone — the mirror of the hybrid rule.
+
+        Regression: Beijing (PEK, air-only) → Sheffield (rail-only).  Picking the
+        hub by cheapest fare flew PEK→Brussels (a few euros cheaper than London)
+        then rode rail Brussels→London→Sheffield — 3 hops crossing the Channel by
+        train.  Hops-first flies PEK→London then takes one short train to
+        Sheffield (2 hops).  A higher-hop hub may only win when its rail leg is
+        short (≤ _SHORT_RAIL_KM).
+        """
+        payload = {
+            "attendees": [
+                {"city": "Beijing", "iatas": ["PEK"], "rail": None,    "count": 1},
+                {"city": "London",  "iatas": ["LHR"], "rail": "GBLON", "count": 1},
+            ],
+            "dest_iata": "GBSHF",   # Sheffield — rail-only destination
+        }
+        res  = client.post("/api/get_routes", json=payload)
+        data = res.get_json()
+        assert res.status_code == 200
+
+        beijing = next(r for r in data["routes"] if "Beijing" in r["city"])
+        assert beijing.get("mode") == "hybrid", (
+            f"Beijing→Sheffield should be a fly-to-hub-then-train gateway, "
+            f"got mode={beijing.get('mode')!r}"
+        )
+        legs      = beijing.get("legs", [])
+        rail_legs = [l for l in legs if l.get("mode") == "rail"]
+        # One flight to a UK hub, then a single short train — not a multi-leg
+        # rail crawl across the Channel from a marginally-cheaper hub.
+        assert len(rail_legs) == 1, (
+            f"Expected a single short final train, got {len(rail_legs)} rail legs"
+        )
+        assert rail_legs[0].get("dist_km", 0) <= app_module._SHORT_RAIL_KM, (
+            f"Final train should be short (≤{app_module._SHORT_RAIL_KM} km), "
+            f"got {rail_legs[0].get('dist_km')} km"
+        )
+
     def test_direct_flight_never_replaced_by_gateway(self, client):
         """
         When a direct (1-hop) flight exists to the destination, the route must
@@ -2772,6 +2854,94 @@ class TestEuropeanRail:
         dest = legs[0].get("dst", "")
         assert dest in ("CDG", "ORY"), (
             f"Direct flight should land at CDG or ORY, not {dest!r}"
+        )
+
+    def test_multi_airport_city_destination_uses_best_airport(self, client):
+        """
+        A non-CITIES multi-airport city is one destination spanning all its
+        airports, at the destination end too — not one independent airport.
+
+        Regression: Bangkok has BKK (Suvarnabhumi, nonstop from London) and DMK
+        (Don Mueang, no London nonstop).  Routing to DMK in isolation detoured
+        LHR→Madras→DMK (2 hops), while the reverse (Bangkok origin) flew BKK→LHR
+        direct — because an origin carries all its airports but a destination
+        used only the one IATA passed.  Now a route to *either* Bangkok airport
+        lands at the best one (BKK, direct).
+        """
+        for dest_iata in ("DMK", "BKK"):
+            payload = {
+                "attendees": [
+                    {"city": "London", "iatas": ["LHR", "LGW", "STN", "LTN", "LCY"],
+                     "rail": "GBLON", "count": 1},
+                    {"city": "Singapore", "iatas": ["SIN"], "rail": None, "count": 1},
+                ],
+                "dest_iata": dest_iata,
+            }
+            res  = client.post("/api/get_routes", json=payload)
+            data = res.get_json()
+            assert res.status_code == 200
+
+            london = next(r for r in data["routes"] if "London" in r["city"])
+            legs = london.get("legs", [])
+            assert len(legs) == 1, (
+                f"London→Bangkok ({dest_iata}) should be a direct flight, "
+                f"got {len(legs)} legs: {legs}"
+            )
+            assert legs[0].get("dst") == "BKK", (
+                f"Should fly nonstop into BKK, not detour; got {legs[0].get('dst')!r}"
+            )
+
+    def test_multi_airport_city_collapses_to_one_ranking_row(self):
+        """Bangkok's two airports must appear as a single ranked destination."""
+        attendees = [
+            {"city": "London", "iatas": ["LHR", "LGW"], "rail": "GBLON", "count": 1},
+            {"city": "Singapore", "iatas": ["SIN"], "rail": None, "count": 1},
+            {"city": "Sydney", "iatas": ["SYD"], "rail": None, "count": 1},
+        ]
+        ranked, _, _ = app_module.find_meeting_destinations(
+            attendees, top_n=60, continent_filter="Asia")
+        bangkok_rows = [r for r in ranked if r.get("city") == "Bangkok"]
+        assert len(bangkok_rows) == 1, (
+            f"Expected one Bangkok row, got {[r['iata'] for r in bangkok_rows]}"
+        )
+
+    def test_connecting_hub_airport_change_is_not_modelled(self, client):
+        """
+        DELIBERATE behaviour (not a bug): the model does NOT ground-transfer
+        between a city's airports at a *connecting* hub.
+
+        Balıkesir Körfez (EDO) is fed only by Istanbul Sabiha Gökçen (SAW); there
+        is no IST→EDO flight. Bangkok→Istanbul is a direct BKK→IST flight, but
+        IST is a dead end for EDO, and the air graph has no IST↔SAW link (changing
+        airports across Istanbul is a ground transfer, not a flight). So the
+        genuine shortest all-flight path detours via a third country (Tehran):
+        BKK→IKA→SAW→EDO. The intuitive 2-flight "BKK→IST then on to EDO" would
+        require either a real IST→EDO route or a same-city-transfer model, neither
+        of which is in scope — this test guards that decision.
+        """
+        payload = {
+            "attendees": [
+                {"city": "Bangkok", "iatas": ["BKK", "DMK"], "rail": None, "count": 1},
+                {"city": "Istanbul", "iatas": ["IST", "SAW"], "rail": "TRIST", "count": 1},
+            ],
+            "dest_iata": "EDO",
+        }
+        res  = client.post("/api/get_routes", json=payload)
+        data = res.get_json()
+        assert res.status_code == 200
+
+        bangkok = next(r for r in data["routes"] if "Bangkok" in r["city"])
+        assert bangkok.get("mode") == "air", (
+            f"Bangkok→Balıkesir should be all-air, got {bangkok.get('mode')!r}"
+        )
+        legs = bangkok.get("legs", [])
+        # EDO is only reachable from SAW, and every leg is a real flight (no
+        # same-city ground transfer is inserted), so the final leg is SAW→EDO.
+        assert legs and legs[-1].get("src") == "SAW" and legs[-1].get("dst") == "EDO", (
+            f"Final leg should be the sole EDO feeder SAW→EDO, got {legs[-1] if legs else None}"
+        )
+        assert all(l.get("mode") == "air" for l in legs), (
+            "No same-city ground-transfer leg is modelled; all legs are flights"
         )
 
 
@@ -2902,6 +3072,61 @@ class TestHomeCityScoreConsistency:
             assert h["est_carbon"] == _round_sig(carbon), (
                 f"{code}: home carbon {h['est_carbon']} != rounded drilldown {_round_sig(carbon)}"
             )
+
+
+class TestMixedRouteChoice:
+    """The shared hops-first selector used by BOTH hybrid and gateway.
+
+    Locks the rule in one place so the two mixed modes can't drift apart:
+    fewest hops wins (ties → cheaper); a higher-hop candidate wins only when
+    its rail leg is short (≤ _SHORT_RAIL_KM) AND strictly cheaper.
+    """
+    SHORT = app_module._SHORT_RAIL_KM
+    LONG  = app_module._SHORT_RAIL_KM + 1
+
+    def _pick(self, candidates):
+        """candidates: list of (label, hops, price, rail_km) → winning label."""
+        choice = app_module._MixedRouteChoice()
+        for label, hops, price, rail_km in candidates:
+            choice.add(label, hops=hops, price=price, rail_km=rail_km)
+        return choice.best()
+
+    def test_empty_returns_none(self):
+        assert app_module._MixedRouteChoice().best() is None
+
+    def test_fewest_hops_wins_even_when_pricier(self):
+        # 2-hop costs more but has fewer hops than the long-rail 4-hop option.
+        assert self._pick([
+            ("near", 2, 500, self.SHORT),
+            ("far",  4, 400, self.LONG),
+        ]) == "near"
+
+    def test_equal_hops_cheaper_wins(self):
+        assert self._pick([
+            ("a", 3, 500, self.LONG),
+            ("b", 3, 450, self.LONG),
+        ]) == "b"
+
+    def test_short_rail_higher_hops_wins_only_when_cheaper(self):
+        # A short-rail, higher-hop option undercuts the fewest-hops base → wins.
+        assert self._pick([
+            ("base",  2, 500, self.SHORT),
+            ("short", 5, 400, self.SHORT),
+        ]) == "short"
+
+    def test_short_rail_higher_hops_loses_when_not_cheaper(self):
+        # Same shape but the short-rail option is NOT cheaper → base keeps it.
+        assert self._pick([
+            ("base",  2, 400, self.SHORT),
+            ("short", 5, 450, self.SHORT),
+        ]) == "base"
+
+    def test_long_rail_higher_hops_never_wins_even_if_cheaper(self):
+        # The original bug: a cheaper but long-rail, higher-hop option must lose.
+        assert self._pick([
+            ("base", 2, 500, self.SHORT),
+            ("long", 8, 400, self.LONG),
+        ]) == "base"
 
 
 # ─── 35. Rail-vs-air decision boundary branches ──────────────────────────────

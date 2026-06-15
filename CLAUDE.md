@@ -53,8 +53,16 @@ sources are **inline Python structures**, not files:
 | **Rail graph** | **`_RAIL_EDGES` + `RAIL_STATIONS`** (inline in `app.py`) | NOT a CSV |
 | **City map** | **`CITIES` dict** (inline in `app.py`) | NOT a JSON file |
 
-- **`CITIES` is the single source of truth.** `IATA_TO_CITY` and `STATION_TO_IATAS`
-  are *derived* from it at startup — edit `CITIES`, not the derived dicts.
+- **`CITIES` is the single source of truth** for the European rail network.
+  `IATA_TO_CITY` and `STATION_TO_IATAS` are *derived* from it at startup — edit
+  `CITIES`, not the derived dicts.
+- **Non-CITIES multi-airport cities** (e.g. Bangkok BKK+DMK, Tokyo NRT+HND) are
+  grouped separately at startup into `AIRPORT_CITY_GROUP` / `AIRPORT_CITY_REPR`
+  (by the airports CSV's `(city, country)`), exposed via `city_airports()` /
+  `city_repr()`. This makes a city's airports interchangeable at the destination
+  end too (not just for origins), so routing lands each attendee at the best
+  airport instead of detouring to a sibling. Keys on the CSV `city` string, so
+  differently-named metro airports (Newark vs New York) stay separate.
 - **Station codes are 5 chars**: 2-char ISO country + 3-char city (e.g. `GBLON`,
   `ITROM`). Same key is used in `RAIL_STATIONS` and as the `'rail'` field in `CITIES`.
 - The **air graph and rail graph are separate** (`GRAPH` vs `RAIL_GRAPH`) so air
