@@ -91,11 +91,18 @@ sources are **inline Python structures**, not files:
 - Ranking is **hops-first** (fewest connections), then re-sorted by the chosen metric
   (cost / carbon / hops).
 
+## Git workflow
+
+- **Solo repo — commit straight to `main`.** No feature branch for routine work
+  (fixes, refactors, docs). Only suggest a branch for genuinely experimental or
+  risky changes; otherwise the owner will ask for one.
+- **Run `pytest` before every commit; never commit or push with the suite red.**
+- **Confirm before pushing to `main`** (committing locally is fine without asking).
+
 ## Doc discipline
 
 - **Update `docs/architecture.md` before pushing to `main`** when you change routing,
   scoring, data sources, or endpoints.
-- Don't push directly to `main` without confirmation.
 
 ## Gotchas
 
