@@ -3026,12 +3026,26 @@ def get_live_prices():
             'source':           source,
         })
 
-    # ── Hotel estimate for the destination ───────────────────────────────────
+    # ── Hotel pricing for the destination ────────────────────────────────────
     dest_city_code = dest_iata if dest_iata in CITIES else IATA_TO_CITY.get(dest_iata)
-    _dest_country = (CITIES[dest_city_code]['country'] if dest_city_code and dest_city_code in CITIES
-                     else AIRPORTS.get(dest_iata, {}).get('country'))
-    hotel_per_person = estimate_hotel_cost(dest_city_code, nights, outbound_str,
-                                           country_name=_dest_country) if nights > 0 else None
+    _dest_country  = (CITIES[dest_city_code]['country'] if dest_city_code and dest_city_code in CITIES
+                      else AIRPORTS.get(dest_iata, {}).get('country'))
+    dest_city_name = CITIES[dest_city_code]['name'] if dest_city_code and dest_city_code in CITIES else None
+
+    hotel_source = 'estimate'
+    if nights > 0:
+        # Hotel check-out is `nights` days after check-in; return flight is the day after
+        checkout_str = (outbound + timedelta(days=nights)).strftime('%Y-%m-%d')
+        live_rate = serpapi_hotel_price(dest_city_name, outbound_str, checkout_str) if dest_city_name else None
+        if live_rate is not None:
+            hotel_per_person = live_rate * nights
+            hotel_source = 'live'
+        else:
+            hotel_per_person = estimate_hotel_cost(dest_city_code, nights, outbound_str,
+                                                   country_name=_dest_country)
+    else:
+        hotel_per_person = None
+
     hotel_carbon_per_person = (_round_sig(estimate_hotel_carbon(dest_city_code, nights,
                                                      country_name=_dest_country))
                                if nights > 0 else None)
@@ -3046,7 +3060,6 @@ def get_live_prices():
     hotel_total        = hotel_per_person * travelling_count if hotel_per_person is not None else None
     hotel_carbon_total = (_round_sig(hotel_carbon_per_person * travelling_count)
                           if hotel_carbon_per_person is not None else None)
-    dest_city_name = CITIES[dest_city_code]['name'] if dest_city_code and dest_city_code in CITIES else None
 
     transport_carbon_kg = _round_sig(total_carbon) if total_carbon else None
     total_carbon_kg = (_round_sig(total_carbon + (hotel_carbon_total or 0))
@@ -3065,6 +3078,7 @@ def get_live_prices():
         'hotel_carbon_per_person':  hotel_carbon_per_person,
         'hotel_carbon_total':       hotel_carbon_total,
         'hotel_carbon_is_estimate': hotel_carbon_is_estimate,
+        'hotel_source':             hotel_source,
         'hotel_nights':             nights,
         'hotel_city':               dest_city_name,
         'travelling_count':         travelling_count,
@@ -3122,6 +3136,63 @@ def serpapi_flight_price(origin_iata, dest_iata, outbound_date, return_date):
 
     log.info("SerpApi price: $%d, carbon: %sg for %s->%s", price, carbon_g, origin_iata, dest_iata)
     return {"price": price, "carbon_g": carbon_g, "currency": "USD"}
+
+
+def serpapi_hotel_price(city_name: str, check_in: str, check_out: str) -> int | None:
+    """Median nightly rate (USD) of 3–4★ hotels via SerpApi Google Hotels.
+    Returns None on failure or no results — caller falls back to estimate."""
+    params = {
+        "engine": "google_hotels",
+        "q": f"hotels in {city_name}",
+        "check_in_date": check_in,
+        "check_out_date": check_out,
+        "currency": "USD",
+        "adults": "1",
+        "hl": "en",
+        "api_key": SERPAPI_KEY,
+    }
+    url = "https://serpapi.com/search?" + urllib.parse.urlencode(params)
+    log.info("SerpApi hotels: %s %s-%s", city_name, check_in, check_out)
+    try:
+        with urllib.request.urlopen(url, timeout=15) as resp:
+            data = json.loads(resp.read().decode())
+    except urllib.error.HTTPError as e:
+        e.read()
+        log.error("SerpApi hotels HTTP %s for %s", e.code, city_name)
+        return None
+    except Exception as e:
+        log.error("SerpApi hotels error: %s", e)
+        return None
+
+    if "error" in data:
+        log.warning("SerpApi hotels error field: %s", data["error"])
+        return None
+
+    properties = data.get("properties", [])
+    midrange = [p for p in properties
+                if any(s in (p.get("hotel_class") or "")
+                       for s in ("3-star", "4-star"))]
+    candidates = midrange if midrange else properties
+
+    rates = []
+    for p in candidates:
+        rpn = p.get("rate_per_night") or {}
+        price = rpn.get("extracted_lowest")
+        if price is not None:
+            try:
+                rates.append(float(price))
+            except (ValueError, TypeError):
+                pass
+
+    if not rates:
+        log.warning("SerpApi hotels: no rates found for %s", city_name)
+        return None
+
+    rates.sort()
+    median = rates[len(rates) // 2]
+    result = round(median)
+    log.info("SerpApi hotels median: $%d for %s (%d hotels)", result, city_name, len(rates))
+    return result
 
 
 if __name__ == '__main__':

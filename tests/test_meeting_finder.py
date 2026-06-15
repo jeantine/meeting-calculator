@@ -67,6 +67,7 @@ from app import (
     RAIL_CARBON_FACTOR,
     _carbon_factor,
     app as flask_app,
+    limiter,
     estimate_fare,
     estimate_rail_fare,
     dijkstra_rail_all,
@@ -79,6 +80,7 @@ from app import (
     get_continent,
     haversine,
     serpapi_flight_price,
+    serpapi_hotel_price,
 )
 
 
@@ -3244,3 +3246,172 @@ class TestHotelLineFrontend:
             f"Expected at least 2 allEntries constructions including greenest, "
             f"found {len(matches)}"
         )
+
+
+# ─── 42. serpapi_hotel_price() unit tests ────────────────────────────────────
+
+class TestSerpApiHotelPrice:
+    """
+    Unit tests for serpapi_hotel_price().  All HTTP calls are replaced with
+    _mock_urlopen so no network is required.
+    """
+
+    @staticmethod
+    def _props(*entries):
+        """Build a minimal Google Hotels response payload."""
+        return {"properties": list(entries)}
+
+    @staticmethod
+    def _prop(star_label, rate):
+        return {"hotel_class": star_label,
+                "rate_per_night": {"extracted_lowest": float(rate)}}
+
+    def test_returns_median_of_3_4_star_hotels(self):
+        """Only 3★ and 4★ properties are used; 5★ is excluded."""
+        payload = self._props(
+            self._prop("3-star hotel", 120),
+            self._prop("4-star hotel", 180),
+            self._prop("5-star hotel", 400),
+        )
+        # 3-4★ rates sorted: [120, 180]; median = rates[2//2] = rates[1] = 180
+        with patch("urllib.request.urlopen", return_value=_mock_urlopen(payload)):
+            result = serpapi_hotel_price("London", "2026-08-01", "2026-08-03")
+        assert result == 180
+
+    def test_median_of_three_midrange_hotels(self):
+        """Median picks the middle value when there are three 3-4★ properties."""
+        payload = self._props(
+            self._prop("3-star hotel", 100),
+            self._prop("3-star hotel", 150),
+            self._prop("4-star hotel", 200),
+        )
+        # sorted: [100, 150, 200]; median = rates[3//2] = rates[1] = 150
+        with patch("urllib.request.urlopen", return_value=_mock_urlopen(payload)):
+            result = serpapi_hotel_price("Paris", "2026-08-01", "2026-08-03")
+        assert result == 150
+
+    def test_falls_back_to_all_hotels_when_no_midrange(self):
+        """When no 3-4★ properties exist, falls back to the full list."""
+        payload = self._props(
+            self._prop("5-star hotel", 300),
+            self._prop("5-star hotel", 500),
+        )
+        # All rates sorted: [300, 500]; median = rates[1] = 500
+        with patch("urllib.request.urlopen", return_value=_mock_urlopen(payload)):
+            result = serpapi_hotel_price("Zurich", "2026-08-01", "2026-08-03")
+        assert result == 500
+
+    def test_returns_none_on_http_error(self):
+        """HTTPError from SerpApi returns None (caller falls back to estimate)."""
+        import urllib.error
+        err = urllib.error.HTTPError(url=None, code=429, msg="Too Many Requests",
+                                     hdrs=None, fp=None)
+        err.read = lambda: b""
+        with patch("urllib.request.urlopen", side_effect=err):
+            result = serpapi_hotel_price("Berlin", "2026-08-01", "2026-08-03")
+        assert result is None
+
+    def test_returns_none_when_no_extracted_lowest(self):
+        """Properties without extracted_lowest are silently skipped; None if all skip."""
+        payload = self._props(
+            {"hotel_class": "3-star hotel", "rate_per_night": {}},
+            {"hotel_class": "4-star hotel"},
+        )
+        with patch("urllib.request.urlopen", return_value=_mock_urlopen(payload)):
+            result = serpapi_hotel_price("Amsterdam", "2026-08-01", "2026-08-03")
+        assert result is None
+
+    def test_returns_none_on_api_error_field(self):
+        """SerpApi error responses (with 'error' key) return None."""
+        payload = {"error": "Invalid API key."}
+        with patch("urllib.request.urlopen", return_value=_mock_urlopen(payload)):
+            result = serpapi_hotel_price("Vienna", "2026-08-01", "2026-08-03")
+        assert result is None
+
+    def test_returns_none_on_empty_properties(self):
+        """Empty properties list returns None."""
+        payload = {"properties": []}
+        with patch("urllib.request.urlopen", return_value=_mock_urlopen(payload)):
+            result = serpapi_hotel_price("Rome", "2026-08-01", "2026-08-03")
+        assert result is None
+
+
+# ─── 43. /api/get_live_prices — hotel_source field ───────────────────────────
+
+class TestLivePricesHotelSource:
+    """
+    The get_live_prices endpoint sets hotel_source to 'live' when
+    serpapi_hotel_price() returns a rate, and 'estimate' when it returns None.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _reset_rate_limit(self):
+        """Reset the in-memory rate-limit counter before each test so cumulative
+        calls from earlier classes don't push us over the 20/minute limit."""
+        limiter.reset()
+
+    BASE_PAYLOAD = {
+        "attendees": [{"city": "Vienna", "iatas": ["VIE"], "count": 1}],
+        "dest_iata": "LHR",
+        "weeks_ahead": 8,
+        "nights": 2,
+    }
+
+    @staticmethod
+    def _set_key(value):
+        orig = app_module.SERPAPI_KEY
+        app_module.SERPAPI_KEY = value
+        return orig
+
+    def test_hotel_source_is_live_when_hotel_api_succeeds(self, client):
+        """hotel_source == 'live' when serpapi_hotel_price returns a nightly rate."""
+        orig = self._set_key("test-key")
+        try:
+            with patch("app.serpapi_flight_price", return_value={"price": 300, "currency": "USD"}):
+                with patch("app.serpapi_hotel_price", return_value=150):
+                    res  = client.post("/api/get_live_prices", json=self.BASE_PAYLOAD)
+                    data = res.get_json()
+            assert res.status_code == 200
+            assert data["hotel_source"] == "live"
+        finally:
+            app_module.SERPAPI_KEY = orig
+
+    def test_hotel_per_person_equals_live_rate_times_nights(self, client):
+        """hotel_per_person == live_rate * nights when SerpApi returns a price."""
+        orig = self._set_key("test-key")
+        try:
+            with patch("app.serpapi_flight_price", return_value={"price": 300, "currency": "USD"}):
+                with patch("app.serpapi_hotel_price", return_value=150):
+                    res  = client.post("/api/get_live_prices", json=self.BASE_PAYLOAD)
+                    data = res.get_json()
+            assert data["hotel_per_person"] == 150 * 2  # 150/night × 2 nights
+        finally:
+            app_module.SERPAPI_KEY = orig
+
+    def test_hotel_source_is_estimate_when_hotel_api_returns_none(self, client):
+        """hotel_source == 'estimate' and hotel_per_person > 0 when SerpApi returns None."""
+        orig = self._set_key("test-key")
+        try:
+            with patch("app.serpapi_flight_price", return_value={"price": 300, "currency": "USD"}):
+                with patch("app.serpapi_hotel_price", return_value=None):
+                    res  = client.post("/api/get_live_prices", json=self.BASE_PAYLOAD)
+                    data = res.get_json()
+            assert res.status_code == 200
+            assert data["hotel_source"] == "estimate"
+            assert data["hotel_per_person"] > 0  # fallback estimate is non-zero
+        finally:
+            app_module.SERPAPI_KEY = orig
+
+    def test_hotel_source_field_present_when_nights_zero(self, client):
+        """hotel_source is present in the response even when nights=0."""
+        orig = self._set_key("test-key")
+        try:
+            payload = {**self.BASE_PAYLOAD, "nights": 0}
+            with patch("app.serpapi_flight_price", return_value={"price": 300, "currency": "USD"}):
+                with patch("app.serpapi_hotel_price", return_value=None):
+                    res  = client.post("/api/get_live_prices", json=payload)
+                    data = res.get_json()
+            assert res.status_code == 200
+            assert "hotel_source" in data
+        finally:
+            app_module.SERPAPI_KEY = orig

@@ -996,9 +996,10 @@ const HOTEL_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" 
 const HOME_ICON  = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" width="1em" height="1em" fill="currentColor" style="vertical-align:-0.15em;display:inline-block;flex-shrink:0"><path d="M10 2.5 L2 9 H4 V17 H8.5 V12.5 H11.5 V17 H16 V9 H18 Z"/></svg>`;
 
 // ── Source badges (reused in live-prices .map()) ──
-const LIVE_BADGE     = `<span class="att-badge" style="background:#e8f0fe;color:#1a56db;border-color:#b3c5f5">✈ live</span>`;
-const RAIL_EST_BADGE = `<span class="att-badge" style="background:#fff8e1;color:#b45309;border-color:#fcd34d">${RAIL_ICON} est.</span>`;
-const AIR_EST_BADGE  = `<span class="att-badge" style="background:#fff8e1;color:#b45309;border-color:#fcd34d">✈ est.</span>`;
+const LIVE_BADGE      = `<span class="att-badge" style="background:#e8f0fe;color:#1a56db;border-color:#b3c5f5">✈ live</span>`;
+const HOTEL_LIVE_BADGE = `<span class="att-badge" style="background:#e8f0fe;color:#1a56db;border-color:#b3c5f5">${HOTEL_ICON} live</span>`;
+const RAIL_EST_BADGE  = `<span class="att-badge" style="background:#fff8e1;color:#b45309;border-color:#fcd34d">${RAIL_ICON} est.</span>`;
+const AIR_EST_BADGE   = `<span class="att-badge" style="background:#fff8e1;color:#b45309;border-color:#fcd34d">✈ est.</span>`;
 
 // ── Elements ──
 const citySearch  = document.getElementById('citySearch');
@@ -1940,13 +1941,18 @@ document.getElementById('getLiveBtn').addEventListener('click', async () => {
     const carbonMethodLabel = data.hotel_carbon_is_estimate ? 'est.' : 'HCMI';
     const hotelCarbonPart   = hcmiTotal != null ? ` · 🌿 ${hcmiTotal} kg CO₂ (${carbonMethodLabel})` : '';
     const hotelTotalText    = `US$${hotelTotal.toLocaleString()} total${hotelCarbonPart}`;
+    const hotelLabel = data.hotel_source === 'live'
+      ? `${HOTEL_ICON} Hotel – Live rate in ${data.hotel_city || ''}`
+      : `${HOTEL_ICON} Hotel – Midrange in ${data.hotel_city || ''}`;
+    const hotelBadge = data.hotel_source === 'live' ? HOTEL_LIVE_BADGE
+      : `<span class="att-badge" style="background:#fff8e1;color:#b45309;border-color:#fcd34d">${HOTEL_ICON} est.</span>`;
     hotelRowHtml = `
       <div class="attendee-route-block">
         <div class="attendee-route-header">
-          <span class="att-city">${HOTEL_ICON} Hotel – Midrange in ${data.hotel_city || ''}</span>
+          <span class="att-city">${hotelLabel}</span>
           <span class="att-badge dist">${nightLabel}</span>
           <span class="att-badge dist">${travCount} traveller${travCount !== 1 ? 's' : ''}</span>
-          <span class="att-badge" style="background:#fff8e1;color:#b45309;border-color:#fcd34d">${HOTEL_ICON} est.</span>
+          ${hotelBadge}
           <span class="att-badge cost" style="margin-left:auto">${hotelTotalText}</span>
         </div>
       </div>`;
