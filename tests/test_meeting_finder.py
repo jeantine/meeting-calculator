@@ -3022,6 +3022,34 @@ class TestHomeCityScoreConsistency:
             "underestimate — the air leg of the mixed route is being ignored"
         )
 
+    def test_multi_airport_home_city_keys_match_across_tables(self):
+        """A multi-airport non-CITIES home city must use the SAME iata key in the
+        home table and the overall table (the representative airport), regardless
+        of the order its airports are listed in.
+
+        Regression: the overall table collapsed Bangkok to its representative
+        (BKK) but the home table keyed it by the attendee's first airport, so
+        listing DMK first produced a home row keyed 'DMK' that no longer matched
+        the overall 'BKK' row — and the generic consistency guard silently skipped
+        it (the codes didn't match, so _find returned None).
+        """
+        for iatas in (["DMK", "BKK"], ["BKK", "DMK"]):
+            attendees = [
+                {"city": "Bangkok", "iatas": list(iatas), "rail": None, "count": 2},
+                {"city": "Singapore", "iatas": ["SIN"], "rail": None, "count": 1},
+            ]
+            ranked, home, _ = find_meeting_destinations(
+                attendees, top_n=60, continent_filter="Asia", nights=2)
+            overall_bkk = self._find(ranked, "BKK")
+            home_bkk    = self._find(home,   "BKK")
+            assert overall_bkk is not None, f"Bangkok missing from overall ({iatas})"
+            assert home_bkk is not None, (
+                f"Bangkok home row not keyed by representative BKK ({iatas}); "
+                f"home iatas present: {[r.get('iata') for r in home]}"
+            )
+            assert home_bkk["est_cost"]   == overall_bkk["est_cost"]
+            assert home_bkk["est_carbon"] == overall_bkk["est_carbon"]
+
     def test_all_home_cities_consistent_with_overall(self):
         """Generic guard: every city present in BOTH tables must have identical
         cost and carbon, across several attendee mixes."""

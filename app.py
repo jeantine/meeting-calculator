@@ -916,6 +916,17 @@ def city_repr(iata):
     """Canonical representative airport for an airport's city (or itself)."""
     return AIRPORT_CITY_REPR.get(iata, iata)
 
+
+def canonical_city_code(code):
+    """Single source of truth for collapsing any airport/station code to a city.
+
+    Returns the CITIES city-code if the airport has one (CDG → FRPAR), else the
+    non-CITIES city's representative airport (DMK → BKK), else the code unchanged
+    (a rail/CITIES code, or a single-airport city, maps to itself).  Every place
+    that derives a city identity from a code must go through here so the overall
+    ranking, the home-city table and the is-home flag can't disagree."""
+    return IATA_TO_CITY.get(code) or city_repr(code)
+
 AIRLINES = {}
 if os.path.exists(AIRLINES_FILE):
     with open(AIRLINES_FILE, newline='', encoding='utf-8') as f:
@@ -1269,14 +1280,21 @@ def find_meeting_destinations(attendees, top_n=10, continent_filter=None, nights
     # air-only origin (no rail) reach a rail-only destination (no airport) —
     # without it such cities (e.g. Sheffield from New York) would never appear
     # in the ranking even though their route drilldown works.
+    # Reachability is intersected at the CITY level (via canonical_city_code), not
+    # per-airport: a multi-airport city counts as reachable for a group if ANY of
+    # its airports is — otherwise a city every group can reach but via different
+    # airports (group A only into BKK, group B only into DMK) would wrongly drop
+    # out of the shared candidate pool.
     all_reachable = {}
     for key in unique_origins:
-        all_reachable[key] = (
-            set(dist_maps[key].keys()) |
-            set(rail_dist_maps[key].keys()) |
-            set(hybrid_cost_maps.get(key, {}).keys()) |
-            set(gateway_cost_maps.get(key, {}).keys())
-        )
+        all_reachable[key] = {
+            canonical_city_code(d) for d in (
+                set(dist_maps[key].keys()) |
+                set(rail_dist_maps[key].keys()) |
+                set(hybrid_cost_maps.get(key, {}).keys()) |
+                set(gateway_cost_maps.get(key, {}).keys())
+            )
+        }
 
     reachable_values = list(all_reachable.values())
     if not reachable_values or not any(reachable_values):
@@ -1298,7 +1316,7 @@ def find_meeting_destinations(attendees, top_n=10, continent_filter=None, nights
 
     if continent_filter and continent_filter != 'Any':
         matching_home_iatas = {
-            iata for iata in all_origin_iatas
+            canonical_city_code(iata) for iata in all_origin_iatas
             if AIRPORTS.get(iata, {}).get('continent') == continent_filter
         }
         candidate_pool = {
@@ -1308,7 +1326,7 @@ def find_meeting_destinations(attendees, top_n=10, continent_filter=None, nights
         log.info("Continent filter '%s': %d candidates (incl. %d home airports on that continent)",
                  continent_filter, len(candidate_pool), len(matching_home_iatas))
     else:
-        candidate_pool |= all_origin_iatas
+        candidate_pool |= {canonical_city_code(i) for i in all_origin_iatas}
 
     # ── Canonical lookup helpers ─────────────────────────────────────────────
     # The cost maps are keyed inconsistently:
@@ -1522,7 +1540,7 @@ def find_meeting_destinations(attendees, top_n=10, continent_filter=None, nights
             continue
         # Non-CITIES airports collapse to their city's representative airport, so
         # a multi-airport city (Bangkok's BKK + DMK) is one row, not two.
-        cc = IATA_TO_CITY.get(dest) or city_repr(dest)
+        cc = canonical_city_code(dest)
         if cc in canonical_cities:
             continue   # canonical candidate is authoritative for this city
         if cc not in city_scores or score[2] < city_scores[cc][2]:
@@ -1629,7 +1647,7 @@ def find_meeting_destinations(attendees, top_n=10, continent_filter=None, nights
     all_origin_city_codes: set = set()
     for _a in attendees:
         for _iata in _a.get('iatas', []):
-            all_origin_city_codes.add(IATA_TO_CITY.get(_iata, _iata))
+            all_origin_city_codes.add(canonical_city_code(_iata))
         if _a.get('rail'):
             all_origin_city_codes.add(_a['rail'])
 
@@ -1716,7 +1734,7 @@ def find_meeting_destinations(attendees, top_n=10, continent_filter=None, nights
             rail_only = not a.get('iatas')
         elif a.get('iatas'):
             first     = a['iatas'][0]
-            home_code = IATA_TO_CITY.get(first, first)
+            home_code = canonical_city_code(first)
             rail_only = False
         else:
             continue

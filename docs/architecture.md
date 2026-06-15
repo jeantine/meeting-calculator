@@ -127,6 +127,15 @@ each attendee independently lands at whichever airport is best for them:
   use it so the destination side sees every airport, just as an origin attendee
   already carries all of theirs.
 
+`canonical_city_code()` is the **single source of truth** for turning any
+airport/station code into a city key (CITIES code if it has one, else the
+representative airport, else itself). The overall ranking, the home-city table,
+and the is-home flag all derive their keys through it, so they can't disagree on
+how a city is identified. Candidate reachability is intersected at this city
+level too — a multi-airport city counts as reachable for a group if *any* of its
+airports is — so a city every group can reach via different airports doesn't drop
+out of the shared candidate pool.
+
 Without the non-CITIES grouping the two ends were asymmetric: an origin used all
 its airports but a destination used only the single IATA passed — so
 London→Bangkok routed to DMK via Madras (no London nonstop into DMK) while
