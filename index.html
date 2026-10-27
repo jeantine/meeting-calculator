@@ -1201,43 +1201,18 @@ async function renderRouteMap(data) {
 
   const esc = t => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-  // ── Cluster vs. outliers ───────────────────────────────────────────────
-  // When some attendees are far from the rest (e.g. another continent), the
-  // full map crams the dense group into a corner. Detect the cluster by which
-  // key points sit close TO EACH OTHER — independent of where the destination
-  // is, so a lone far destination (e.g. everyone flying to Sydney) still leaves
-  // the cluster detectable — then show a zoomed inset of it.
-  const keyPts = routesG.map(g => g.verts[0]).concat(destPt ? [destPt] : []);
-  const nn = keyPts.map((p, i) => {
-    let m = Infinity;
-    keyPts.forEach((q, j) => { if (i !== j) m = Math.min(m, Math.hypot(p[0] - q[0], p[1] - q[1])); });
-    return m;
-  });
-  const nnSorted = [...nn].sort((a, b) => a - b);
-  let nnThresh = Infinity;   // a large jump in nearest-neighbour distance = outliers
-  for (let i = 1; i < nnSorted.length; i++) {
-    if (nnSorted[i - 1] > 1 && nnSorted[i] > nnSorted[i - 1] * 3) { nnThresh = (nnSorted[i - 1] + nnSorted[i]) / 2; break; }
-  }
-  const clusterKey = keyPts.filter((_, i) => nn[i] <= nnThresh);
-  const hasInset = nnThresh !== Infinity && clusterKey.length >= 3 && clusterKey.length < keyPts.length;
-  // Cluster bounding box; membership is geometric so routing hubs near the
-  // cluster count as part of it and far hubs don't.
-  let kxmin = Infinity, kxmax = -Infinity, kymin = Infinity, kymax = -Infinity;
-  clusterKey.forEach(p => { kxmin = Math.min(kxmin, p[0]); kxmax = Math.max(kxmax, p[0]); kymin = Math.min(kymin, p[1]); kymax = Math.max(kymax, p[1]); });
-  const kPad = Math.max(kxmax - kxmin, kymax - kymin) * 0.5 + 8;
-  const inCluster = p => hasInset
-    && p[0] >= kxmin - kPad && p[0] <= kxmax + kPad
-    && p[1] >= kymin - kPad && p[1] <= kymax + kPad;
-  const clusterPts = all.filter(inCluster);
-  // Focus point for radial label spreading = cluster centre (else destination).
-  const anchor = hasInset ? [(kxmin + kxmax) / 2, (kymin + kymax) / 2] : (destPt || all[0]);
+  // Focus point for radial label spreading = centre of all plotted points, so
+  // labels fan outward away from the crowd.
+  const anchor = [
+    all.reduce((s, p) => s + p[0], 0) / all.length,
+    all.reduce((s, p) => s + p[1], 0) / all.length,
+  ];
 
   // Build every route's lines, markers, star and labels at the given marker
   // (dot) and label (FS) sizes. Flights = solid curved arc, trains = dashed
-  // straight line. labelMode 'outliers' suppresses labels for points inside the
-  // cluster (the inset carries those) so the overview isn't a pile of
-  // overlapping text; 'all' labels everything.
-  function buildOverlay(dot, FS, labelMode) {
+  // straight line. Connection hubs are named on hover only; city labels are
+  // de-collided and dropped (hover-only) if the map is too crowded to label.
+  function buildOverlay(dot, FS) {
     const mkLabel = (x, y, txt, color) =>
       `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-size="${FS.toFixed(2)}" `
       + `text-anchor="middle" dominant-baseline="middle" fill="${color}" stroke="#ffffff" `
@@ -1285,7 +1260,7 @@ async function renderRouteMap(data) {
       // Name the origin, offset radially outward from the map's focus so that
       // labels for clustered cities spread to different sides instead of
       // stacking on top of each other.
-      if (labelMode === 'all' || !inCluster(o)) {
+      {
         let rdx = o[0] - anchor[0], rdy = o[1] - anchor[1];
         const rlen = Math.hypot(rdx, rdy);
         const off = dot + FS * 0.9;
@@ -1303,8 +1278,8 @@ async function renderRouteMap(data) {
       }
       destSvg = `<polygon points="${star.join(' ')}" fill="#0a1a0e" stroke="#ffffff" `
         + `stroke-width="1.2" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
-      if (data.dest && data.dest.city) hitSvg += addHit(cx, cy, data.dest.city);
-      if (data.dest && data.dest.city && (labelMode === 'all' || !inCluster(destPt))) {
+      if (data.dest && data.dest.city) {
+        hitSvg += addHit(cx, cy, data.dest.city);
         labels.push({ x: cx, y: cy - (ss + FS * 0.85), ax: cx, ay: cy, txt: data.dest.city, color: '#0a1a0e' });
       }
     }
@@ -1313,90 +1288,40 @@ async function renderRouteMap(data) {
     // of each other. Greedy: place in y order, push each clear of earlier ones.
     const lh = FS * 1.25, charW = FS * 0.62;
     const halfW = L => (L.txt.length * charW) / 2;
-    let labelSvg = '', leaderSvg = '', farCount = 0;
-    const placed = [];
+    let labelSvg = '';
+    const placed = [];   // only labels actually drawn occupy space
     labels.sort((a, b) => a.y - b.y);
     labels.forEach(L => {
       const hw = halfW(L);
       const hits = y => placed.some(P =>
         Math.abs(L.x - P.x) < (hw + halfW(P)) && Math.abs(y - P.y) < lh);
-      if (hits(L.y)) {
-        for (let k = 1; k <= 14; k++) {
-          if (!hits(L.y - k * lh)) { L.y -= k * lh; break; }
-          if (!hits(L.y + k * lh)) { L.y += k * lh; break; }
+      let y = L.y;
+      if (hits(y)) {
+        y = null;
+        for (let k = 1; k <= 6; k++) {
+          if (!hits(L.y - k * lh)) { y = L.y - k * lh; break; }
+          if (!hits(L.y + k * lh)) { y = L.y + k * lh; break; }
         }
+        if (y === null) return;   // nowhere clear nearby → name is on hover
       }
+      // Only label a point if the text sits near it; tightly-clustered cities
+      // can't all be labelled legibly, so those fall back to hover.
+      if (Math.hypot(L.x - L.ax, y - L.ay) > FS * 2.6) return;
+      L.y = y;
       placed.push(L);
-      L.far = Math.hypot(L.x - L.ax, L.y - L.ay);
-      if (L.far > lh * 3.5) farCount++;   // had to travel a long way to fit
+      labelSvg += mkLabel(L.x, L.y, L.txt, L.color);
     });
-    // If too many labels had to be shoved far to avoid overlap, the map is too
-    // crowded to label legibly — drop the text and rely on hover + the legend.
-    const tooCrowded = labels.length >= 5 && farCount / labels.length > 0.3;
-    if (!tooCrowded) {
-      placed.forEach(L => {
-        if (L.far > FS * 2) {   // leader line back to the marker it names
-          leaderSvg += `<line x1="${L.ax.toFixed(1)}" y1="${L.ay.toFixed(1)}" `
-            + `x2="${L.x.toFixed(1)}" y2="${L.y.toFixed(1)}" stroke="${L.color}" `
-            + `stroke-width="0.6" opacity="0.5" vector-effect="non-scaling-stroke"/>`;
-        }
-        labelSvg += mkLabel(L.x, L.y, L.txt, L.color);
-      });
-    }
     // Hit targets go last so they sit on top and reliably catch hover.
-    return segSvg + mk + destSvg + leaderSvg + labelSvg + hitSvg;
+    return segSvg + mk + destSvg + labelSvg + hitSvg;
   }
 
   const dotMain = Math.max(w, h) * 0.009;
   const FSMain = Math.max(w * 0.032, 2.4);
-  const mainOverlay = buildOverlay(dotMain, FSMain, hasInset ? 'outliers' : 'all');
-
-  // ── Zoomed inset of the dense cluster ──────────────────────────────────
-  let insetSvg = '';
-  if (hasInset) {
-    let cxmin = Math.min(...clusterPts.map(p => p[0])), cxmax = Math.max(...clusterPts.map(p => p[0]));
-    let cymin = Math.min(...clusterPts.map(p => p[1])), cymax = Math.max(...clusterPts.map(p => p[1]));
-    let cw = Math.max(cxmax - cxmin, 8), ch = Math.max(cymax - cymin, 6);
-    const cpadX = cw * 0.55 + 6, cpadY = ch * 0.42 + 4;   // room for edge labels
-    cxmin -= cpadX; cymin -= cpadY; cw += 2 * cpadX; ch += 2 * cpadY;
-    cxmin = Math.max(0, Math.min(cxmin, MAP_W - cw));
-    cymin = Math.max(0, Math.min(cymin, MAP_H - ch));
-    cw = Math.min(cw, MAP_W); ch = Math.min(ch, MAP_H);
-    // Inset box (in main viewBox units), matching the cluster's aspect ratio.
-    const arC = cw / ch;
-    let ih = h * 0.52, iw = ih * arC;
-    const maxIw = w * 0.48;
-    if (iw > maxIw) { iw = maxIw; ih = iw / arC; }
-    // Place the inset in whichever corner overlaps the fewest plotted points,
-    // so it covers empty ocean rather than routes or the far outlier.
-    const marg = Math.min(w, h) * 0.03;
-    const corners = [
-      [minX + marg, minY + marg],
-      [minX + w - iw - marg, minY + marg],
-      [minX + marg, minY + h - ih - marg],
-      [minX + w - iw - marg, minY + h - ih - marg],
-    ];
-    let ix = corners[0][0], iy = corners[0][1], bestC = Infinity;
-    for (const [x0, y0] of corners) {
-      const c = all.filter(p => p[0] >= x0 && p[0] <= x0 + iw && p[1] >= y0 && p[1] <= y0 + ih).length;
-      if (c < bestC) { bestC = c; ix = x0; iy = y0; }
-    }
-    // Smaller text in the inset — the cluster is dense, so compact labels (with
-    // collision avoidance) read better than full-size ones.
-    const insetScale = iw / cw;
-    const insetOverlay = buildOverlay(dotMain / insetScale * 0.9, FSMain / insetScale * 0.78, 'all');
-    insetSvg =
-      `<rect x="${ix.toFixed(1)}" y="${iy.toFixed(1)}" width="${iw.toFixed(1)}" height="${ih.toFixed(1)}" `
-      + `fill="#ffffff" stroke="#9fb3c8" stroke-width="1.2" vector-effect="non-scaling-stroke" rx="3"/>`
-      + `<svg x="${ix.toFixed(1)}" y="${iy.toFixed(1)}" width="${iw.toFixed(1)}" height="${ih.toFixed(1)}" `
-      + `viewBox="${cxmin.toFixed(1)} ${cymin.toFixed(1)} ${cw.toFixed(1)} ${ch.toFixed(1)}" preserveAspectRatio="xMidYMid meet">`
-      + `<rect x="${cxmin.toFixed(1)}" y="${cymin.toFixed(1)}" width="${cw.toFixed(1)}" height="${ch.toFixed(1)}" fill="#eef3f6"/>`
-      + land + insetOverlay + `</svg>`;
-  }
+  const mainOverlay = buildOverlay(dotMain, FSMain);
 
   const svg = `<svg viewBox="${minX.toFixed(1)} ${minY.toFixed(1)} ${w.toFixed(1)} ${h.toFixed(1)}" `
     + `xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Map of attendee routes">`
-    + land + mainOverlay + insetSvg + `</svg>`;
+    + land + mainOverlay + `</svg>`;
 
   const attendeeLegend = routesG.map(g =>
     `<span class="legend-item"><span class="legend-swatch" style="background:${g.color}"></span>${g.city}</span>`
@@ -1416,7 +1341,6 @@ async function renderRouteMap(data) {
     + `<div class="route-map-legend">${attendeeLegend}${destLegend}</div>`
     + `<div class="route-map-legend route-map-modekey">${modeLegend}</div>`
     + `<div class="route-map-note">Rail stations are approximated by their nearest city airport.`
-    + (hasInset ? ` The inset zooms in on the main cluster of attendees.` : ``)
     + ` Hover a point for its name.`
     + `</div>`;
 
