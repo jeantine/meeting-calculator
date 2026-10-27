@@ -1183,22 +1183,35 @@ async function renderRouteMap(data) {
   const esc = t => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
   // ── Cluster vs. outliers ───────────────────────────────────────────────
-  // When one attendee is far from the rest (e.g. another continent), the full
-  // map crams the dense cluster into a corner. Detect that split — points near
-  // the destination form the cluster; a large jump in distance marks an
-  // outlier — so we can add a zoomed inset of the cluster.
-  const anchor = destPt || all[0];
-  const distOf = p => Math.hypot(p[0] - anchor[0], p[1] - anchor[1]);
-  const dsorted = all.map(distOf).sort((a, b) => a - b);
-  let clusterRadius = Infinity;
-  for (let i = 1; i < dsorted.length; i++) {
-    if (dsorted[i - 1] > 1 && dsorted[i] > dsorted[i - 1] * 3) {
-      clusterRadius = (dsorted[i - 1] + dsorted[i]) / 2; break;
-    }
+  // When some attendees are far from the rest (e.g. another continent), the
+  // full map crams the dense group into a corner. Detect the cluster by which
+  // key points sit close TO EACH OTHER — independent of where the destination
+  // is, so a lone far destination (e.g. everyone flying to Sydney) still leaves
+  // the cluster detectable — then show a zoomed inset of it.
+  const keyPts = routesG.map(g => g.verts[0]).concat(destPt ? [destPt] : []);
+  const nn = keyPts.map((p, i) => {
+    let m = Infinity;
+    keyPts.forEach((q, j) => { if (i !== j) m = Math.min(m, Math.hypot(p[0] - q[0], p[1] - q[1])); });
+    return m;
+  });
+  const nnSorted = [...nn].sort((a, b) => a - b);
+  let nnThresh = Infinity;   // a large jump in nearest-neighbour distance = outliers
+  for (let i = 1; i < nnSorted.length; i++) {
+    if (nnSorted[i - 1] > 1 && nnSorted[i] > nnSorted[i - 1] * 3) { nnThresh = (nnSorted[i - 1] + nnSorted[i]) / 2; break; }
   }
-  const inCluster = p => distOf(p) <= clusterRadius;
+  const clusterKey = keyPts.filter((_, i) => nn[i] <= nnThresh);
+  const hasInset = nnThresh !== Infinity && clusterKey.length >= 3 && clusterKey.length < keyPts.length;
+  // Cluster bounding box; membership is geometric so routing hubs near the
+  // cluster count as part of it and far hubs don't.
+  let kxmin = Infinity, kxmax = -Infinity, kymin = Infinity, kymax = -Infinity;
+  clusterKey.forEach(p => { kxmin = Math.min(kxmin, p[0]); kxmax = Math.max(kxmax, p[0]); kymin = Math.min(kymin, p[1]); kymax = Math.max(kymax, p[1]); });
+  const kPad = Math.max(kxmax - kxmin, kymax - kymin) * 0.5 + 8;
+  const inCluster = p => hasInset
+    && p[0] >= kxmin - kPad && p[0] <= kxmax + kPad
+    && p[1] >= kymin - kPad && p[1] <= kymax + kPad;
   const clusterPts = all.filter(inCluster);
-  const hasInset = clusterRadius !== Infinity && clusterPts.length >= 3;
+  // Focus point for radial label spreading = cluster centre (else destination).
+  const anchor = hasInset ? [(kxmin + kxmax) / 2, (kymin + kymax) / 2] : (destPt || all[0]);
 
   // Build every route's lines, markers, star and labels at the given marker
   // (dot) and label (FS) sizes. Flights = solid curved arc, trains = dashed
@@ -1244,7 +1257,7 @@ async function renderRouteMap(data) {
         // mode — the inset shows them.
         if (si < g.segs.length - 1 && (labelMode === 'all' || !inCluster(s.b))) {
           const glyph = s.mode === 'rail' ? '🚆' : '✈';
-          labels.push({ x: lx, y: ly, txt: `→ ${s.dst} ${glyph}`, color: g.color });
+          labels.push({ x: lx, y: ly, ax: lx, ay: ly, txt: `→ ${s.dst} ${glyph}`, color: g.color });
         }
       });
       // Markers: hollow ring at origin, filled dot at each connection point.
@@ -1265,7 +1278,7 @@ async function renderRouteMap(data) {
         const off = dot + FS * 0.9;
         const lxo = rlen > 0.5 ? o[0] + rdx / rlen * off : o[0];
         const lyo = rlen > 0.5 ? o[1] + rdy / rlen * off : o[1] - off;
-        labels.push({ x: lxo, y: lyo, txt: g.city.split(',')[0], color: g.color });
+        labels.push({ x: lxo, y: lyo, ax: o[0], ay: o[1], txt: g.city.split(',')[0], color: g.color });
       }
     });
     if (destPt) {
@@ -1278,7 +1291,7 @@ async function renderRouteMap(data) {
       destSvg = `<polygon points="${star.join(' ')}" fill="#0a1a0e" stroke="#ffffff" `
         + `stroke-width="1.2" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
       if (data.dest && data.dest.city && (labelMode === 'all' || !inCluster(destPt))) {
-        labels.push({ x: cx, y: cy - (ss + FS * 0.85), txt: data.dest.city, color: '#0a1a0e' });
+        labels.push({ x: cx, y: cy - (ss + FS * 0.85), ax: cx, ay: cy, txt: data.dest.city, color: '#0a1a0e' });
       }
     }
     // De-collide labels: nudge overlapping ones vertically so same-latitude
@@ -1286,7 +1299,7 @@ async function renderRouteMap(data) {
     // of each other. Greedy: place in y order, push each clear of earlier ones.
     const lh = FS * 1.25, charW = FS * 0.62;
     const halfW = L => (L.txt.length * charW) / 2;
-    let labelSvg = '';
+    let labelSvg = '', leaderSvg = '';
     const placed = [];
     labels.sort((a, b) => a.y - b.y);
     labels.forEach(L => {
@@ -1300,9 +1313,16 @@ async function renderRouteMap(data) {
         }
       }
       placed.push(L);
+      // Leader line when a label ends up far from the point it names, so you can
+      // trace it back to its marker.
+      if (Math.hypot(L.x - L.ax, L.y - L.ay) > FS * 2) {
+        leaderSvg += `<line x1="${L.ax.toFixed(1)}" y1="${L.ay.toFixed(1)}" `
+          + `x2="${L.x.toFixed(1)}" y2="${L.y.toFixed(1)}" stroke="${L.color}" `
+          + `stroke-width="0.6" opacity="0.5" vector-effect="non-scaling-stroke"/>`;
+      }
       labelSvg += mkLabel(L.x, L.y, L.txt, L.color);
     });
-    return segSvg + mk + destSvg + labelSvg;
+    return segSvg + mk + destSvg + leaderSvg + labelSvg;
   }
 
   const dotMain = Math.max(w, h) * 0.009;
