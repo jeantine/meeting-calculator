@@ -78,6 +78,8 @@ from app import (
     _round_sig,
     get_routes_for_destination,
     get_continent,
+    continent_for,
+    COUNTRY_TO_CONTINENT,
     haversine,
     serpapi_flight_price,
     serpapi_hotel_price,
@@ -1970,6 +1972,76 @@ class TestGetContinent:
             assert result == "Asia", (
                 f"{label} ({lat}, {lon}) classified as {result!r}, expected 'Asia'"
             )
+
+    def test_spain_portugal_atlantic_islands_are_europe(self):
+        # The Canary Islands (Spain), Madeira and the Azores (Portugal) sit off
+        # Africa / mid-Atlantic, so the geographic box put them under Africa (or
+        # Unknown). A country-level override groups all Spanish/Portuguese
+        # airports under Europe, so they no longer surface under the Africa
+        # filter.
+        for iata in ("LPA", "TFN", "TFS", "ACE", "FUE", "SPC", "FNC", "PDL"):
+            info = AIRPORTS.get(iata)
+            assert info is not None, f"{iata} not found in AIRPORTS"
+            assert info["continent"] == "Europe", (
+                f"{iata} ({info['city']}, {info['country']}) classified as "
+                f"{info['continent']!r}, expected 'Europe'"
+            )
+
+
+# ─── 31b. Country → continent mapping (the definitive signal) ────────────────
+
+class TestContinentForCountry:
+    """
+    Continent is assigned per-airport from its country via COUNTRY_TO_CONTINENT,
+    with get_continent(lat, lon) only as a fallback. Transcontinental / territory
+    calls follow travel-industry (IATA) convention.
+    """
+
+    def test_every_data_country_is_mapped(self):
+        # No airport should fall back to the geographic box — every country
+        # string in the data must be in the table.
+        unmapped = sorted({
+            a["country"] for a in AIRPORTS.values()
+            if a["country"] not in COUNTRY_TO_CONTINENT
+        })
+        assert unmapped == [], f"countries missing from table: {unmapped}"
+
+    def test_no_airport_resolves_to_unknown(self):
+        bad = sorted({a["country"] for a in AIRPORTS.values()
+                      if a["continent"] == "Unknown"})
+        assert bad == [], f"countries resolving to Unknown: {bad}"
+
+    def test_transcontinental_calls_follow_iata_convention(self):
+        cases = {
+            "Turkey": "Asia",
+            "Russia": "Europe",
+            "Cyprus": "Europe",
+            "Georgia": "Asia",
+            "Armenia": "Asia",
+            "Azerbaijan": "Asia",
+            "Kazakhstan": "Asia",
+            "Egypt": "Africa",
+            "Panama": "North America",
+            "Reunion": "Africa",
+            "Mayotte": "Africa",
+            "Spain": "Europe",
+            "Portugal": "Europe",
+        }
+        for country, continent in cases.items():
+            assert COUNTRY_TO_CONTINENT.get(country) == continent, (
+                f"{country} -> {COUNTRY_TO_CONTINENT.get(country)!r}, "
+                f"expected {continent!r}"
+            )
+
+    def test_country_wins_over_geography(self):
+        # Istanbul sits in the Europe box geographically but Turkey -> Asia.
+        ist = AIRPORTS.get("IST")
+        assert ist is not None
+        assert continent_for("Turkey", ist["lat"], ist["lon"]) == "Asia"
+
+    def test_unlisted_country_falls_back_to_geography(self):
+        # A country not in the table uses the lat/lon box (London coords).
+        assert continent_for("Neverland", 51.5, -0.1) == get_continent(51.5, -0.1)
 
 
 # ─── 32. find_meeting_destinations — all same city ───────────────────────────

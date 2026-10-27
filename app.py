@@ -117,13 +117,121 @@ def get_continent(lat, lon):
     return "Unknown"
 
 
+# ── Country → continent (the definitive signal) ─────────────────────────────
+# An airport's country is a far more reliable continent signal than its
+# coordinates, which mis-file offshore territories (Canary Islands, Madeira,
+# Réunion …) and transcontinental states. Keys are the exact country strings
+# used in airports.csv (OpenFlights naming).
+#
+# Transcontinental / politically-assigned calls follow travel-industry (IATA)
+# convention rather than strict geography:
+#   • Russia → Europe   • Turkey → Asia   • Cyprus → Europe (EU)
+#   • Georgia / Armenia / Azerbaijan → Asia (South Caucasus)
+#   • Kazakhstan → Asia  • Egypt → Africa  • Panama & Central America → N. America
+#   • Caribbean island states/territories → North America
+#   • Réunion / Mayotte / St Helena / Western Sahara → Africa
+#   • Christmas I. / Cocos / British Indian Ocean Territory → Asia
+# get_continent(lat, lon) remains the fallback for any unlisted country.
+COUNTRY_TO_CONTINENT = {
+    # Africa
+    'Algeria': 'Africa', 'Angola': 'Africa', 'Benin': 'Africa', 'Botswana': 'Africa',
+    'Burkina Faso': 'Africa', 'Burundi': 'Africa', 'Cameroon': 'Africa',
+    'Cape Verde': 'Africa', 'Central African Republic': 'Africa', 'Chad': 'Africa',
+    'Comoros': 'Africa', 'Congo (Brazzaville)': 'Africa', 'Congo (Kinshasa)': 'Africa',
+    "Cote d'Ivoire": 'Africa', 'Djibouti': 'Africa', 'Egypt': 'Africa',
+    'Equatorial Guinea': 'Africa', 'Eritrea': 'Africa', 'Ethiopia': 'Africa',
+    'Gabon': 'Africa', 'Gambia': 'Africa', 'Ghana': 'Africa', 'Guinea': 'Africa',
+    'Guinea-Bissau': 'Africa', 'Kenya': 'Africa', 'Lesotho': 'Africa',
+    'Liberia': 'Africa', 'Libya': 'Africa', 'Madagascar': 'Africa', 'Malawi': 'Africa',
+    'Mali': 'Africa', 'Mauritania': 'Africa', 'Mauritius': 'Africa', 'Mayotte': 'Africa',
+    'Morocco': 'Africa', 'Mozambique': 'Africa', 'Namibia': 'Africa', 'Niger': 'Africa',
+    'Nigeria': 'Africa', 'Reunion': 'Africa', 'Rwanda': 'Africa', 'Saint Helena': 'Africa',
+    'Sao Tome and Principe': 'Africa', 'Senegal': 'Africa', 'Seychelles': 'Africa',
+    'Sierra Leone': 'Africa', 'Somalia': 'Africa', 'South Africa': 'Africa',
+    'South Sudan': 'Africa', 'Sudan': 'Africa', 'Swaziland': 'Africa', 'Tanzania': 'Africa',
+    'Togo': 'Africa', 'Tunisia': 'Africa', 'Uganda': 'Africa', 'Western Sahara': 'Africa',
+    'Zambia': 'Africa', 'Zimbabwe': 'Africa',
+    # Asia
+    'Afghanistan': 'Asia', 'Armenia': 'Asia', 'Azerbaijan': 'Asia', 'Bahrain': 'Asia',
+    'Bangladesh': 'Asia', 'Bhutan': 'Asia', 'British Indian Ocean Territory': 'Asia',
+    'Brunei': 'Asia', 'Burma': 'Asia', 'Cambodia': 'Asia', 'China': 'Asia',
+    'Christmas Island': 'Asia', 'Cocos (Keeling) Islands': 'Asia', 'East Timor': 'Asia',
+    'Georgia': 'Asia', 'Hong Kong': 'Asia', 'India': 'Asia', 'Indonesia': 'Asia',
+    'Iran': 'Asia', 'Iraq': 'Asia', 'Israel': 'Asia', 'Japan': 'Asia', 'Jordan': 'Asia',
+    'Kazakhstan': 'Asia', 'Kuwait': 'Asia', 'Kyrgyzstan': 'Asia', 'Laos': 'Asia',
+    'Lebanon': 'Asia', 'Macau': 'Asia', 'Malaysia': 'Asia', 'Maldives': 'Asia',
+    'Mongolia': 'Asia', 'Myanmar': 'Asia', 'Nepal': 'Asia', 'North Korea': 'Asia',
+    'Oman': 'Asia', 'Pakistan': 'Asia', 'Palestine': 'Asia', 'Philippines': 'Asia',
+    'Qatar': 'Asia', 'Saudi Arabia': 'Asia', 'Singapore': 'Asia', 'South Korea': 'Asia',
+    'Sri Lanka': 'Asia', 'Syria': 'Asia', 'Taiwan': 'Asia', 'Tajikistan': 'Asia',
+    'Thailand': 'Asia', 'Turkey': 'Asia', 'Turkmenistan': 'Asia',
+    'United Arab Emirates': 'Asia', 'Uzbekistan': 'Asia', 'Vietnam': 'Asia', 'Yemen': 'Asia',
+    # Europe
+    'Albania': 'Europe', 'Austria': 'Europe', 'Belarus': 'Europe', 'Belgium': 'Europe',
+    'Bosnia and Herzegovina': 'Europe', 'Bulgaria': 'Europe', 'Croatia': 'Europe',
+    'Cyprus': 'Europe', 'Czech Republic': 'Europe', 'Denmark': 'Europe', 'Estonia': 'Europe',
+    'Faroe Islands': 'Europe', 'Finland': 'Europe', 'France': 'Europe', 'Germany': 'Europe',
+    'Gibraltar': 'Europe', 'Greece': 'Europe', 'Guernsey': 'Europe', 'Hungary': 'Europe',
+    'Iceland': 'Europe', 'Ireland': 'Europe', 'Isle of Man': 'Europe', 'Italy': 'Europe',
+    'Jersey': 'Europe', 'Latvia': 'Europe', 'Lithuania': 'Europe', 'Luxembourg': 'Europe',
+    'Macedonia': 'Europe', 'Malta': 'Europe', 'Moldova': 'Europe', 'Montenegro': 'Europe',
+    'Netherlands': 'Europe', 'Norway': 'Europe', 'Poland': 'Europe', 'Portugal': 'Europe',
+    'Romania': 'Europe', 'Russia': 'Europe', 'Serbia': 'Europe', 'Slovakia': 'Europe',
+    'Slovenia': 'Europe', 'Spain': 'Europe', 'Sweden': 'Europe', 'Switzerland': 'Europe',
+    'Ukraine': 'Europe', 'United Kingdom': 'Europe',
+    # North America (incl. Central America & Caribbean)
+    'Anguilla': 'North America', 'Antigua and Barbuda': 'North America', 'Aruba': 'North America',
+    'Bahamas': 'North America', 'Barbados': 'North America', 'Belize': 'North America',
+    'Bermuda': 'North America', 'British Virgin Islands': 'North America',
+    'Canada': 'North America', 'Cayman Islands': 'North America', 'Costa Rica': 'North America',
+    'Cuba': 'North America', 'Dominica': 'North America', 'Dominican Republic': 'North America',
+    'El Salvador': 'North America', 'Greenland': 'North America', 'Grenada': 'North America',
+    'Guadeloupe': 'North America', 'Guatemala': 'North America', 'Haiti': 'North America',
+    'Honduras': 'North America', 'Jamaica': 'North America', 'Martinique': 'North America',
+    'Mexico': 'North America', 'Montserrat': 'North America', 'Netherlands Antilles': 'North America',
+    'Nicaragua': 'North America', 'Panama': 'North America', 'Puerto Rico': 'North America',
+    'Saint Kitts and Nevis': 'North America', 'Saint Lucia': 'North America',
+    'Saint Pierre and Miquelon': 'North America',
+    'Saint Vincent and the Grenadines': 'North America',
+    'Trinidad and Tobago': 'North America', 'Turks and Caicos Islands': 'North America',
+    'United States': 'North America', 'Virgin Islands': 'North America',
+    # South America
+    'Argentina': 'South America', 'Bolivia': 'South America', 'Brazil': 'South America',
+    'Chile': 'South America', 'Colombia': 'South America', 'Ecuador': 'South America',
+    'Falkland Islands': 'South America', 'French Guiana': 'South America',
+    'Guyana': 'South America', 'Paraguay': 'South America', 'Peru': 'South America',
+    'Suriname': 'South America', 'Uruguay': 'South America', 'Venezuela': 'South America',
+    # Oceania
+    'American Samoa': 'Oceania', 'Australia': 'Oceania', 'Cook Islands': 'Oceania',
+    'Fiji': 'Oceania', 'French Polynesia': 'Oceania', 'Guam': 'Oceania',
+    'Johnston Atoll': 'Oceania', 'Kiribati': 'Oceania', 'Marshall Islands': 'Oceania',
+    'Micronesia': 'Oceania', 'Midway Islands': 'Oceania', 'Nauru': 'Oceania',
+    'New Caledonia': 'Oceania', 'New Zealand': 'Oceania', 'Niue': 'Oceania',
+    'Norfolk Island': 'Oceania', 'Northern Mariana Islands': 'Oceania', 'Palau': 'Oceania',
+    'Papua New Guinea': 'Oceania', 'Samoa': 'Oceania', 'Solomon Islands': 'Oceania',
+    'Tonga': 'Oceania', 'Tuvalu': 'Oceania', 'Vanuatu': 'Oceania', 'Wake Island': 'Oceania',
+    'Wallis and Futuna': 'Oceania',
+    # Antarctica
+    'Antarctica': 'Antarctica',
+}
+
+
+def continent_for(country, lat, lon):
+    """
+    Continent for an airport. The country is the definitive signal (with the
+    IATA/travel-convention calls baked into COUNTRY_TO_CONTINENT); fall back to
+    the geographic bounding box only for a country not in the table.
+    """
+    return COUNTRY_TO_CONTINENT.get((country or '').strip()) or get_continent(lat, lon)
+
+
 def same_continent(iata_a, iata_b, airports):
     """Return True if both airports are on the same continent."""
     a = airports.get(iata_a, {})
     b = airports.get(iata_b, {})
     if not a or not b:
         return False
-    return get_continent(a['lat'], a['lon']) == get_continent(b['lat'], b['lon'])
+    return a.get('continent') == b.get('continent')
 
 
 def load_airports(filepath):
@@ -139,13 +247,14 @@ def load_airports(filepath):
             except (ValueError, KeyError):
                 continue
             if iata and iata != '\\N':
+                country = row.get('Country', '').strip()
                 airports[iata] = {
                     'name':      row.get('Name', '').strip(),
                     'city':      row.get('City', '').strip(),
-                    'country':   row.get('Country', '').strip(),
+                    'country':   country,
                     'lat':       lat,
                     'lon':       lon,
-                    'continent': get_continent(lat, lon),
+                    'continent': continent_for(country, lat, lon),
                 }
     return airports
 
@@ -181,21 +290,8 @@ for p in [AIRPORTS_FILE, ROUTES_FILE]:
 print("Loading airports...")
 AIRPORTS = load_airports(AIRPORTS_FILE)
 
-# ── Country-level continent overrides ───────────────────────────────────────
-# The source CSV uses a geographic convention that classifies Istanbul and most
-# of Turkey as Europe because of the historical/cultural association.  For
-# travel-industry purposes Turkey belongs in Asia (IATA groups it with the
-# Middle East).  Reclassify all Turkish airports so continent filtering works
-# consistently — searching "Asia" finds Istanbul, not just eastern Anatolian
-# airports, and Istanbul is no longer excluded as a hub when scoring Asian
-# destinations like Konya.
-_COUNTRY_CONTINENT_OVERRIDES = {
-    'Turkey': 'Asia',
-}
-for _apt in AIRPORTS.values():
-    _override = _COUNTRY_CONTINENT_OVERRIDES.get(_apt.get('country'))
-    if _override:
-        _apt['continent'] = _override
+# Continent is assigned per-airport from its country via COUNTRY_TO_CONTINENT
+# (see continent_for), so no post-load overrides are needed.
 
 print(f"  {len(AIRPORTS)} airports loaded.")
 print("Building route graph...")
