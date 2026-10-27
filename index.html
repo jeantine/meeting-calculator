@@ -536,6 +536,7 @@
     gap: 0;
   }
   .route-map {
+    position: relative;
     width: 100%;
     border: 1px solid var(--border2);
     border-top: none;
@@ -545,6 +546,20 @@
     box-sizing: border-box;
   }
   .route-map:empty { display: none; }
+  .route-map-tip {
+    position: absolute;
+    z-index: 5;
+    pointer-events: none;
+    background: var(--text);
+    color: var(--surface);
+    font-family: 'DM Mono', monospace;
+    font-size: 0.74rem;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 5px;
+    white-space: nowrap;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+  }
   .route-map > svg {
     display: block;
     width: 100%;
@@ -1149,9 +1164,13 @@ async function renderRouteMap(data) {
       if (!verts.length) verts.push(a);
       verts.push(b);
       // Label each leg by its endpoint: rail uses the city name (station codes
-      // are opaque), air uses the compact IATA code.
+      // are opaque), air uses the compact IATA code. `name` is the richer form
+      // shown on hover (e.g. "Beijing (PEK)").
       const dst = l.mode === 'rail' ? (l.dst_city || l.dst) : l.dst;
-      segs.push({ mode: l.mode, a, b, dst });
+      const name = l.mode === 'rail'
+        ? (l.dst_name || l.dst_city || l.dst)
+        : (l.dst_city ? `${l.dst_city} (${l.dst})` : l.dst);
+      segs.push({ mode: l.mode, a, b, dst, name });
     });
     if (segs.length) routesG.push({ color, city: r.city, verts, segs });
   });
@@ -1225,21 +1244,21 @@ async function renderRouteMap(data) {
       + `stroke-width="${(FS * 0.22).toFixed(2)}" `
       + `style="paint-order:stroke;stroke-linejoin:round;font-family:'DM Mono',monospace;font-weight:600">`
       + `${esc(txt)}</text>`;
-    let segSvg = '', mk = '', destSvg = '';
-    const labels = [];   // collected, then de-collided before drawing
+    let segSvg = '', mk = '', destSvg = '', hitSvg = '';
+    const labels = [];   // city labels, collected then de-collided before drawing
+    // Transparent, hoverable hit target carrying a point's name (shown on hover).
+    const addHit = (x, y, name) => `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" `
+      + `r="${(dot * 2.4).toFixed(2)}" fill="transparent" data-city="${esc(name)}" style="cursor:pointer"/>`;
     routesG.forEach(g => {
-      g.segs.forEach((s, si) => {
+      g.segs.forEach((s) => {
         const [ax, ay] = s.a, [bx, by] = s.b;
         const dx = bx - ax, dy = by - ay, len = Math.hypot(dx, dy) || 1;
         const nx = -dy / len, ny = dx / len;   // unit perpendicular (bow side)
-        let lx, ly;
         if (s.mode === 'rail') {
           segSvg += `<line x1="${ax.toFixed(1)}" y1="${ay.toFixed(1)}" `
             + `x2="${bx.toFixed(1)}" y2="${by.toFixed(1)}" stroke="${g.color}" `
             + `stroke-width="2.4" stroke-dasharray="5 4" stroke-linecap="round" `
             + `vector-effect="non-scaling-stroke"/>`;
-          lx = (ax + bx) / 2 + nx * FS * 0.9;
-          ly = (ay + by) / 2 + ny * FS * 0.9;
         } else {
           const mx = (ax + bx) / 2, my = (ay + by) / 2;
           const off = Math.min(len * 0.16, 30);
@@ -1248,26 +1267,20 @@ async function renderRouteMap(data) {
             + `Q${cx.toFixed(1)},${cy.toFixed(1)} ${bx.toFixed(1)},${by.toFixed(1)}" `
             + `fill="none" stroke="${g.color}" stroke-width="2.4" stroke-linecap="round" `
             + `vector-effect="non-scaling-stroke"/>`;
-          // Apex of the quadratic, nudged just past the bow for clearance.
-          lx = 0.25 * ax + 0.5 * cx + 0.25 * bx + nx * FS * 0.5;
-          ly = 0.25 * ay + 0.5 * cy + 0.25 * by + ny * FS * 0.5;
-        }
-        // Label only intermediate connection legs mid-arc (the final leg ends at
-        // the destination, named at the star). Skip cluster labels in 'outliers'
-        // mode — the inset shows them.
-        if (si < g.segs.length - 1 && (labelMode === 'all' || !inCluster(s.b))) {
-          const glyph = s.mode === 'rail' ? '🚆' : '✈';
-          labels.push({ x: lx, y: ly, ax: lx, ay: ly, txt: `→ ${s.dst} ${glyph}`, color: g.color });
         }
       });
       // Markers: hollow ring at origin, filled dot at each connection point.
+      // Connection hubs are named on hover only (their codes cluttered the map
+      // and are already listed in the route detail below).
       const o = g.verts[0];
       mk += `<circle cx="${o[0].toFixed(1)}" cy="${o[1].toFixed(1)}" r="${dot.toFixed(2)}" `
         + `fill="#ffffff" stroke="${g.color}" stroke-width="1.8" vector-effect="non-scaling-stroke"/>`;
+      hitSvg += addHit(o[0], o[1], g.city.split(',')[0]);
       for (let k = 1; k < g.verts.length - 1; k++) {
         const p = g.verts[k];
         mk += `<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="${(dot * 0.62).toFixed(2)}" `
           + `fill="${g.color}" stroke="#ffffff" stroke-width="1" vector-effect="non-scaling-stroke"/>`;
+        hitSvg += addHit(p[0], p[1], (g.segs[k - 1] && g.segs[k - 1].name) || '');
       }
       // Name the origin, offset radially outward from the map's focus so that
       // labels for clustered cities spread to different sides instead of
@@ -1290,6 +1303,7 @@ async function renderRouteMap(data) {
       }
       destSvg = `<polygon points="${star.join(' ')}" fill="#0a1a0e" stroke="#ffffff" `
         + `stroke-width="1.2" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
+      if (data.dest && data.dest.city) hitSvg += addHit(cx, cy, data.dest.city);
       if (data.dest && data.dest.city && (labelMode === 'all' || !inCluster(destPt))) {
         labels.push({ x: cx, y: cy - (ss + FS * 0.85), ax: cx, ay: cy, txt: data.dest.city, color: '#0a1a0e' });
       }
@@ -1299,7 +1313,7 @@ async function renderRouteMap(data) {
     // of each other. Greedy: place in y order, push each clear of earlier ones.
     const lh = FS * 1.25, charW = FS * 0.62;
     const halfW = L => (L.txt.length * charW) / 2;
-    let labelSvg = '', leaderSvg = '';
+    let labelSvg = '', leaderSvg = '', farCount = 0;
     const placed = [];
     labels.sort((a, b) => a.y - b.y);
     labels.forEach(L => {
@@ -1313,16 +1327,24 @@ async function renderRouteMap(data) {
         }
       }
       placed.push(L);
-      // Leader line when a label ends up far from the point it names, so you can
-      // trace it back to its marker.
-      if (Math.hypot(L.x - L.ax, L.y - L.ay) > FS * 2) {
-        leaderSvg += `<line x1="${L.ax.toFixed(1)}" y1="${L.ay.toFixed(1)}" `
-          + `x2="${L.x.toFixed(1)}" y2="${L.y.toFixed(1)}" stroke="${L.color}" `
-          + `stroke-width="0.6" opacity="0.5" vector-effect="non-scaling-stroke"/>`;
-      }
-      labelSvg += mkLabel(L.x, L.y, L.txt, L.color);
+      L.far = Math.hypot(L.x - L.ax, L.y - L.ay);
+      if (L.far > lh * 3.5) farCount++;   // had to travel a long way to fit
     });
-    return segSvg + mk + destSvg + leaderSvg + labelSvg;
+    // If too many labels had to be shoved far to avoid overlap, the map is too
+    // crowded to label legibly — drop the text and rely on hover + the legend.
+    const tooCrowded = labels.length >= 5 && farCount / labels.length > 0.3;
+    if (!tooCrowded) {
+      placed.forEach(L => {
+        if (L.far > FS * 2) {   // leader line back to the marker it names
+          leaderSvg += `<line x1="${L.ax.toFixed(1)}" y1="${L.ay.toFixed(1)}" `
+            + `x2="${L.x.toFixed(1)}" y2="${L.y.toFixed(1)}" stroke="${L.color}" `
+            + `stroke-width="0.6" opacity="0.5" vector-effect="non-scaling-stroke"/>`;
+        }
+        labelSvg += mkLabel(L.x, L.y, L.txt, L.color);
+      });
+    }
+    // Hit targets go last so they sit on top and reliably catch hover.
+    return segSvg + mk + destSvg + leaderSvg + labelSvg + hitSvg;
   }
 
   const dotMain = Math.max(w, h) * 0.009;
@@ -1390,11 +1412,37 @@ async function renderRouteMap(data) {
     + `<line x1="1" y1="4" x2="21" y2="4" stroke="currentColor" stroke-width="2" stroke-dasharray="4 3"/></svg>${RAIL_ICON} Train</span>`;
 
   routeMap.innerHTML = svg
+    + `<div class="route-map-tip" hidden></div>`
     + `<div class="route-map-legend">${attendeeLegend}${destLegend}</div>`
     + `<div class="route-map-legend route-map-modekey">${modeLegend}</div>`
     + `<div class="route-map-note">Rail stations are approximated by their nearest city airport.`
     + (hasInset ? ` The inset zooms in on the main cluster of attendees.` : ``)
+    + ` Hover a point for its name.`
     + `</div>`;
+
+  // Hover tooltips for every marker (origins, connection hubs, destination).
+  // Attached once; the handler reads the current tip element each move.
+  if (!routeMap._tipInit) {
+    routeMap._tipInit = true;
+    routeMap.addEventListener('mousemove', e => {
+      const tip = routeMap.querySelector('.route-map-tip');
+      if (!tip) return;
+      const t = e.target.closest('[data-city]');
+      if (t && t.getAttribute('data-city')) {
+        tip.textContent = t.getAttribute('data-city');
+        const r = routeMap.getBoundingClientRect();
+        tip.style.left = (e.clientX - r.left + 14) + 'px';
+        tip.style.top  = (e.clientY - r.top + 14) + 'px';
+        tip.hidden = false;
+      } else {
+        tip.hidden = true;
+      }
+    });
+    routeMap.addEventListener('mouseleave', () => {
+      const tip = routeMap.querySelector('.route-map-tip');
+      if (tip) tip.hidden = true;
+    });
+  }
 }
 
 // ── City search ──
