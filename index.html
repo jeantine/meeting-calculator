@@ -1187,8 +1187,15 @@ async function renderRouteMap(data) {
   const esc = t => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const FS = Math.max(w * 0.032, 2.4);   // label size (∝ viewBox ⇒ ~constant on screen)
   let segSvg = '', labelSvg = '';
+  // Reusable label with a white halo so it stays legible over lines/land.
+  const mkLabel = (x, y, txt, color) =>
+    `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-size="${FS.toFixed(2)}" `
+    + `text-anchor="middle" dominant-baseline="middle" fill="${color}" stroke="#ffffff" `
+    + `stroke-width="${(FS * 0.22).toFixed(2)}" `
+    + `style="paint-order:stroke;stroke-linejoin:round;font-family:'DM Mono',monospace;font-weight:600">`
+    + `${esc(txt)}</text>`;
   routesG.forEach(g => {
-    g.segs.forEach(s => {
+    g.segs.forEach((s, si) => {
       const [ax, ay] = s.a, [bx, by] = s.b;
       const dx = bx - ax, dy = by - ay, len = Math.hypot(dx, dy) || 1;
       const nx = -dy / len, ny = dx / len;   // unit perpendicular (bow side)
@@ -1212,13 +1219,17 @@ async function renderRouteMap(data) {
         lx = 0.25 * ax + 0.5 * cx + 0.25 * bx + nx * FS * 0.5;
         ly = 0.25 * ay + 0.5 * cy + 0.25 * by + ny * FS * 0.5;
       }
-      const glyph = s.mode === 'rail' ? '🚆' : '✈';
-      labelSvg += `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" `
-        + `font-size="${FS.toFixed(2)}" text-anchor="middle" dominant-baseline="middle" `
-        + `fill="${g.color}" stroke="#ffffff" stroke-width="${(FS * 0.22).toFixed(2)}" `
-        + `style="paint-order:stroke;stroke-linejoin:round;font-family:'DM Mono',monospace;font-weight:600">`
-        + `→ ${esc(s.dst)} ${glyph}</text>`;
+      // Only label intermediate connection legs mid-arc. The final leg ends at
+      // the meeting destination, which is named at the star below — labelling it
+      // here too would float a stray destination code in mid-route.
+      if (si < g.segs.length - 1) {
+        const glyph = s.mode === 'rail' ? '🚆' : '✈';
+        labelSvg += mkLabel(lx, ly, `→ ${s.dst} ${glyph}`, g.color);
+      }
     });
+    // Name the origin next to its ring so you can see where the journey starts.
+    const o = g.verts[0];
+    labelSvg += mkLabel(o[0], o[1] - (dot + FS * 0.85), g.city.split(',')[0], g.color);
   });
 
   // Markers: hollow ring at origin, filled dot at each connection point.
@@ -1245,6 +1256,10 @@ async function renderRouteMap(data) {
     }
     destSvg = `<polygon points="${star.join(' ')}" fill="#0a1a0e" stroke="#ffffff" `
       + `stroke-width="1.2" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
+    // Name the destination above the star.
+    if (data.dest && data.dest.city) {
+      labelSvg += mkLabel(cx, cy - (s + FS * 0.85), data.dest.city, '#0a1a0e');
+    }
   }
 
   const svg = `<svg viewBox="${minX.toFixed(1)} ${minY.toFixed(1)} ${w.toFixed(1)} ${h.toFixed(1)}" `
@@ -1996,13 +2011,18 @@ async function selectDest(iata, row) {
         </div>
       </div>`;
 
-    const legs = r.legs.map(l => {
+    const legs = r.legs.map((l, li) => {
       const isRail = l.mode === 'rail';
       const modeIcon = isRail ? RAIL_ICON : '✈';
       // Primary line = city names (what the reader cares about); secondary line
       // = the airport/station codes (air: IATA; rail: full station names).
-      const srcCity = l.src_city || l.src;
-      const dstCity = l.dst_city || l.dst;
+      // Use the meeting/home city names at the route ends — they read more
+      // clearly than the terminal airport names (e.g. "Tallinn" not
+      // "Tallinn-ulemiste International"). Intermediate legs keep their
+      // airport/station city as-is.
+      const srcCity = li === 0 ? r.city.split(',')[0] : (l.src_city || l.src);
+      const dstCity = (li === r.legs.length - 1 && data.dest && data.dest.city)
+        ? data.dest.city : (l.dst_city || l.dst);
       const codes   = isRail ? `${l.src_name} → ${l.dst_name}` : `${l.src} → ${l.dst}`;
       return `
       <div class="leg-row${isRail ? ' leg-rail' : ''}">
