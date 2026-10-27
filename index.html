@@ -1212,7 +1212,8 @@ async function renderRouteMap(data) {
       + `stroke-width="${(FS * 0.22).toFixed(2)}" `
       + `style="paint-order:stroke;stroke-linejoin:round;font-family:'DM Mono',monospace;font-weight:600">`
       + `${esc(txt)}</text>`;
-    let segSvg = '', labelSvg = '', mk = '', destSvg = '';
+    let segSvg = '', mk = '', destSvg = '';
+    const labels = [];   // collected, then de-collided before drawing
     routesG.forEach(g => {
       g.segs.forEach((s, si) => {
         const [ax, ay] = s.a, [bx, by] = s.b;
@@ -1243,7 +1244,7 @@ async function renderRouteMap(data) {
         // mode — the inset shows them.
         if (si < g.segs.length - 1 && (labelMode === 'all' || !inCluster(s.b))) {
           const glyph = s.mode === 'rail' ? '🚆' : '✈';
-          labelSvg += mkLabel(lx, ly, `→ ${s.dst} ${glyph}`, g.color);
+          labels.push({ x: lx, y: ly, txt: `→ ${s.dst} ${glyph}`, color: g.color });
         }
       });
       // Markers: hollow ring at origin, filled dot at each connection point.
@@ -1264,7 +1265,7 @@ async function renderRouteMap(data) {
         const off = dot + FS * 0.9;
         const lxo = rlen > 0.5 ? o[0] + rdx / rlen * off : o[0];
         const lyo = rlen > 0.5 ? o[1] + rdy / rlen * off : o[1] - off;
-        labelSvg += mkLabel(lxo, lyo, g.city.split(',')[0], g.color);
+        labels.push({ x: lxo, y: lyo, txt: g.city.split(',')[0], color: g.color });
       }
     });
     if (destPt) {
@@ -1277,9 +1278,30 @@ async function renderRouteMap(data) {
       destSvg = `<polygon points="${star.join(' ')}" fill="#0a1a0e" stroke="#ffffff" `
         + `stroke-width="1.2" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
       if (data.dest && data.dest.city && (labelMode === 'all' || !inCluster(destPt))) {
-        labelSvg += mkLabel(cx, cy - (ss + FS * 0.85), data.dest.city, '#0a1a0e');
+        labels.push({ x: cx, y: cy - (ss + FS * 0.85), txt: data.dest.city, color: '#0a1a0e' });
       }
     }
+    // De-collide labels: nudge overlapping ones vertically so same-latitude
+    // cities (e.g. London/Paris/Berlin/Warsaw) stack instead of printing on top
+    // of each other. Greedy: place in y order, push each clear of earlier ones.
+    const lh = FS * 1.25, charW = FS * 0.62;
+    const halfW = L => (L.txt.length * charW) / 2;
+    let labelSvg = '';
+    const placed = [];
+    labels.sort((a, b) => a.y - b.y);
+    labels.forEach(L => {
+      const hw = halfW(L);
+      const hits = y => placed.some(P =>
+        Math.abs(L.x - P.x) < (hw + halfW(P)) && Math.abs(y - P.y) < lh);
+      if (hits(L.y)) {
+        for (let k = 1; k <= 14; k++) {
+          if (!hits(L.y - k * lh)) { L.y -= k * lh; break; }
+          if (!hits(L.y + k * lh)) { L.y += k * lh; break; }
+        }
+      }
+      placed.push(L);
+      labelSvg += mkLabel(L.x, L.y, L.txt, L.color);
+    });
     return segSvg + mk + destSvg + labelSvg;
   }
 
@@ -1317,7 +1339,10 @@ async function renderRouteMap(data) {
       const c = all.filter(p => p[0] >= x0 && p[0] <= x0 + iw && p[1] >= y0 && p[1] <= y0 + ih).length;
       if (c < bestC) { bestC = c; ix = x0; iy = y0; }
     }
-    const insetOverlay = buildOverlay(dotMain / (iw / cw), FSMain / (iw / cw), 'all');
+    // Smaller text in the inset — the cluster is dense, so compact labels (with
+    // collision avoidance) read better than full-size ones.
+    const insetScale = iw / cw;
+    const insetOverlay = buildOverlay(dotMain / insetScale * 0.9, FSMain / insetScale * 0.78, 'all');
     insetSvg =
       `<rect x="${ix.toFixed(1)}" y="${iy.toFixed(1)}" width="${iw.toFixed(1)}" height="${ih.toFixed(1)}" `
       + `fill="#ffffff" stroke="#9fb3c8" stroke-width="1.2" vector-effect="non-scaling-stroke" rx="3"/>`
