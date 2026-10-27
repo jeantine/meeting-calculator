@@ -166,4 +166,16 @@ attendee's journey over a real world basemap.
   **flights are solid curved arcs, trains are dashed straight lines**, with a
   hollow ring at each origin, filled dots at connection points, and a star at the
   destination. The projection is shared with `world-airports.svg` (the page
-  background), which uses the same 1000×500 equirectangular layout.
+  background), which uses the same 1000×500 equirectangular layout. The map is
+  rendered **full-width at the top of the route detail**, above the per-attendee
+  leg list (`.route-detail-cols` is a vertical stack).
+- **Labels & hover** — origin and destination cities are labelled on the map;
+  labels are de-collided (nudged vertically) and a label is **only drawn when it
+  lands near the point it names** (within ~2.6 label-heights). Tightly-clustered
+  cities that can't be labelled legibly, and all intermediate connection hubs,
+  fall back to **hover**: every marker carries a transparent hit target with a
+  `data-city` name (hubs read e.g. `Beijing (PEK)`), and a single delegated
+  `mousemove` handler on `#routeMap` shows a `.route-map-tip` tooltip. The leg
+  list below still spells out every hub in full, so nothing is hover-only there.
+  The origin/destination city names (not the terminal airport names) are used at
+  the route ends in both the map and the leg list.
