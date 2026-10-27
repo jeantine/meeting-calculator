@@ -1180,91 +1180,156 @@ async function renderRouteMap(data) {
   minY = Math.max(0, Math.min(minY, MAP_H - h));
   w = Math.min(w, MAP_W); h = Math.min(h, MAP_H);
 
-  const dot = Math.max(w, h) * 0.009;   // marker radius in viewBox units
-
-  // Route segments + per-leg labels: flights = solid curved arc, trains =
-  // dashed straight line. Each leg is labelled "→ <endpoint> <mode glyph>".
   const esc = t => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  const FS = Math.max(w * 0.032, 2.4);   // label size (∝ viewBox ⇒ ~constant on screen)
-  let segSvg = '', labelSvg = '';
-  // Reusable label with a white halo so it stays legible over lines/land.
-  const mkLabel = (x, y, txt, color) =>
-    `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-size="${FS.toFixed(2)}" `
-    + `text-anchor="middle" dominant-baseline="middle" fill="${color}" stroke="#ffffff" `
-    + `stroke-width="${(FS * 0.22).toFixed(2)}" `
-    + `style="paint-order:stroke;stroke-linejoin:round;font-family:'DM Mono',monospace;font-weight:600">`
-    + `${esc(txt)}</text>`;
-  routesG.forEach(g => {
-    g.segs.forEach((s, si) => {
-      const [ax, ay] = s.a, [bx, by] = s.b;
-      const dx = bx - ax, dy = by - ay, len = Math.hypot(dx, dy) || 1;
-      const nx = -dy / len, ny = dx / len;   // unit perpendicular (bow side)
-      let lx, ly;
-      if (s.mode === 'rail') {
-        segSvg += `<line x1="${ax.toFixed(1)}" y1="${ay.toFixed(1)}" `
-          + `x2="${bx.toFixed(1)}" y2="${by.toFixed(1)}" stroke="${g.color}" `
-          + `stroke-width="2.4" stroke-dasharray="5 4" stroke-linecap="round" `
-          + `vector-effect="non-scaling-stroke"/>`;
-        lx = (ax + bx) / 2 + nx * FS * 0.9;
-        ly = (ay + by) / 2 + ny * FS * 0.9;
-      } else {
-        const mx = (ax + bx) / 2, my = (ay + by) / 2;
-        const off = Math.min(len * 0.16, 30);
-        const cx = mx + nx * off, cy = my + ny * off;   // perpendicular bow
-        segSvg += `<path d="M${ax.toFixed(1)},${ay.toFixed(1)} `
-          + `Q${cx.toFixed(1)},${cy.toFixed(1)} ${bx.toFixed(1)},${by.toFixed(1)}" `
-          + `fill="none" stroke="${g.color}" stroke-width="2.4" stroke-linecap="round" `
-          + `vector-effect="non-scaling-stroke"/>`;
-        // Apex of the quadratic, nudged just past the bow for clearance.
-        lx = 0.25 * ax + 0.5 * cx + 0.25 * bx + nx * FS * 0.5;
-        ly = 0.25 * ay + 0.5 * cy + 0.25 * by + ny * FS * 0.5;
+
+  // ── Cluster vs. outliers ───────────────────────────────────────────────
+  // When one attendee is far from the rest (e.g. another continent), the full
+  // map crams the dense cluster into a corner. Detect that split — points near
+  // the destination form the cluster; a large jump in distance marks an
+  // outlier — so we can add a zoomed inset of the cluster.
+  const anchor = destPt || all[0];
+  const distOf = p => Math.hypot(p[0] - anchor[0], p[1] - anchor[1]);
+  const dsorted = all.map(distOf).sort((a, b) => a - b);
+  let clusterRadius = Infinity;
+  for (let i = 1; i < dsorted.length; i++) {
+    if (dsorted[i - 1] > 1 && dsorted[i] > dsorted[i - 1] * 3) {
+      clusterRadius = (dsorted[i - 1] + dsorted[i]) / 2; break;
+    }
+  }
+  const inCluster = p => distOf(p) <= clusterRadius;
+  const clusterPts = all.filter(inCluster);
+  const hasInset = clusterRadius !== Infinity && clusterPts.length >= 3;
+
+  // Build every route's lines, markers, star and labels at the given marker
+  // (dot) and label (FS) sizes. Flights = solid curved arc, trains = dashed
+  // straight line. labelMode 'outliers' suppresses labels for points inside the
+  // cluster (the inset carries those) so the overview isn't a pile of
+  // overlapping text; 'all' labels everything.
+  function buildOverlay(dot, FS, labelMode) {
+    const mkLabel = (x, y, txt, color) =>
+      `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-size="${FS.toFixed(2)}" `
+      + `text-anchor="middle" dominant-baseline="middle" fill="${color}" stroke="#ffffff" `
+      + `stroke-width="${(FS * 0.22).toFixed(2)}" `
+      + `style="paint-order:stroke;stroke-linejoin:round;font-family:'DM Mono',monospace;font-weight:600">`
+      + `${esc(txt)}</text>`;
+    let segSvg = '', labelSvg = '', mk = '', destSvg = '';
+    routesG.forEach(g => {
+      g.segs.forEach((s, si) => {
+        const [ax, ay] = s.a, [bx, by] = s.b;
+        const dx = bx - ax, dy = by - ay, len = Math.hypot(dx, dy) || 1;
+        const nx = -dy / len, ny = dx / len;   // unit perpendicular (bow side)
+        let lx, ly;
+        if (s.mode === 'rail') {
+          segSvg += `<line x1="${ax.toFixed(1)}" y1="${ay.toFixed(1)}" `
+            + `x2="${bx.toFixed(1)}" y2="${by.toFixed(1)}" stroke="${g.color}" `
+            + `stroke-width="2.4" stroke-dasharray="5 4" stroke-linecap="round" `
+            + `vector-effect="non-scaling-stroke"/>`;
+          lx = (ax + bx) / 2 + nx * FS * 0.9;
+          ly = (ay + by) / 2 + ny * FS * 0.9;
+        } else {
+          const mx = (ax + bx) / 2, my = (ay + by) / 2;
+          const off = Math.min(len * 0.16, 30);
+          const cx = mx + nx * off, cy = my + ny * off;   // perpendicular bow
+          segSvg += `<path d="M${ax.toFixed(1)},${ay.toFixed(1)} `
+            + `Q${cx.toFixed(1)},${cy.toFixed(1)} ${bx.toFixed(1)},${by.toFixed(1)}" `
+            + `fill="none" stroke="${g.color}" stroke-width="2.4" stroke-linecap="round" `
+            + `vector-effect="non-scaling-stroke"/>`;
+          // Apex of the quadratic, nudged just past the bow for clearance.
+          lx = 0.25 * ax + 0.5 * cx + 0.25 * bx + nx * FS * 0.5;
+          ly = 0.25 * ay + 0.5 * cy + 0.25 * by + ny * FS * 0.5;
+        }
+        // Label only intermediate connection legs mid-arc (the final leg ends at
+        // the destination, named at the star). Skip cluster labels in 'outliers'
+        // mode — the inset shows them.
+        if (si < g.segs.length - 1 && (labelMode === 'all' || !inCluster(s.b))) {
+          const glyph = s.mode === 'rail' ? '🚆' : '✈';
+          labelSvg += mkLabel(lx, ly, `→ ${s.dst} ${glyph}`, g.color);
+        }
+      });
+      // Markers: hollow ring at origin, filled dot at each connection point.
+      const o = g.verts[0];
+      mk += `<circle cx="${o[0].toFixed(1)}" cy="${o[1].toFixed(1)}" r="${dot.toFixed(2)}" `
+        + `fill="#ffffff" stroke="${g.color}" stroke-width="1.8" vector-effect="non-scaling-stroke"/>`;
+      for (let k = 1; k < g.verts.length - 1; k++) {
+        const p = g.verts[k];
+        mk += `<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="${(dot * 0.62).toFixed(2)}" `
+          + `fill="${g.color}" stroke="#ffffff" stroke-width="1" vector-effect="non-scaling-stroke"/>`;
       }
-      // Only label intermediate connection legs mid-arc. The final leg ends at
-      // the meeting destination, which is named at the star below — labelling it
-      // here too would float a stray destination code in mid-route.
-      if (si < g.segs.length - 1) {
-        const glyph = s.mode === 'rail' ? '🚆' : '✈';
-        labelSvg += mkLabel(lx, ly, `→ ${s.dst} ${glyph}`, g.color);
+      // Name the origin, offset radially outward from the map's focus so that
+      // labels for clustered cities spread to different sides instead of
+      // stacking on top of each other.
+      if (labelMode === 'all' || !inCluster(o)) {
+        let rdx = o[0] - anchor[0], rdy = o[1] - anchor[1];
+        const rlen = Math.hypot(rdx, rdy);
+        const off = dot + FS * 0.9;
+        const lxo = rlen > 0.5 ? o[0] + rdx / rlen * off : o[0];
+        const lyo = rlen > 0.5 ? o[1] + rdy / rlen * off : o[1] - off;
+        labelSvg += mkLabel(lxo, lyo, g.city.split(',')[0], g.color);
       }
     });
-    // Name the origin next to its ring so you can see where the journey starts.
-    const o = g.verts[0];
-    labelSvg += mkLabel(o[0], o[1] - (dot + FS * 0.85), g.city.split(',')[0], g.color);
-  });
+    if (destPt) {
+      const ss = dot * 2, cx = destPt[0], cy = destPt[1], star = [];
+      for (let k = 0; k < 10; k++) {
+        const ang = -Math.PI / 2 + k * Math.PI / 5;
+        const rad = k % 2 === 0 ? ss : ss * 0.45;
+        star.push((cx + rad * Math.cos(ang)).toFixed(1) + ',' + (cy + rad * Math.sin(ang)).toFixed(1));
+      }
+      destSvg = `<polygon points="${star.join(' ')}" fill="#0a1a0e" stroke="#ffffff" `
+        + `stroke-width="1.2" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
+      if (data.dest && data.dest.city && (labelMode === 'all' || !inCluster(destPt))) {
+        labelSvg += mkLabel(cx, cy - (ss + FS * 0.85), data.dest.city, '#0a1a0e');
+      }
+    }
+    return segSvg + mk + destSvg + labelSvg;
+  }
 
-  // Markers: hollow ring at origin, filled dot at each connection point.
-  let mk = '';
-  routesG.forEach(g => {
-    const o = g.verts[0];
-    mk += `<circle cx="${o[0].toFixed(1)}" cy="${o[1].toFixed(1)}" r="${dot}" `
-      + `fill="#ffffff" stroke="${g.color}" stroke-width="1.8" vector-effect="non-scaling-stroke"/>`;
-    for (let k = 1; k < g.verts.length - 1; k++) {
-      const p = g.verts[k];
-      mk += `<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="${(dot * 0.62).toFixed(2)}" `
-        + `fill="${g.color}" stroke="#ffffff" stroke-width="1" vector-effect="non-scaling-stroke"/>`;
-    }
-  });
+  const dotMain = Math.max(w, h) * 0.009;
+  const FSMain = Math.max(w * 0.032, 2.4);
+  const mainOverlay = buildOverlay(dotMain, FSMain, hasInset ? 'outliers' : 'all');
 
-  // Destination star.
-  let destSvg = '';
-  if (destPt) {
-    const s = dot * 2, cx = destPt[0], cy = destPt[1], star = [];
-    for (let k = 0; k < 10; k++) {
-      const ang = -Math.PI / 2 + k * Math.PI / 5;
-      const rad = k % 2 === 0 ? s : s * 0.45;
-      star.push((cx + rad * Math.cos(ang)).toFixed(1) + ',' + (cy + rad * Math.sin(ang)).toFixed(1));
+  // ── Zoomed inset of the dense cluster ──────────────────────────────────
+  let insetSvg = '';
+  if (hasInset) {
+    let cxmin = Math.min(...clusterPts.map(p => p[0])), cxmax = Math.max(...clusterPts.map(p => p[0]));
+    let cymin = Math.min(...clusterPts.map(p => p[1])), cymax = Math.max(...clusterPts.map(p => p[1]));
+    let cw = Math.max(cxmax - cxmin, 8), ch = Math.max(cymax - cymin, 6);
+    const cpadX = cw * 0.55 + 6, cpadY = ch * 0.42 + 4;   // room for edge labels
+    cxmin -= cpadX; cymin -= cpadY; cw += 2 * cpadX; ch += 2 * cpadY;
+    cxmin = Math.max(0, Math.min(cxmin, MAP_W - cw));
+    cymin = Math.max(0, Math.min(cymin, MAP_H - ch));
+    cw = Math.min(cw, MAP_W); ch = Math.min(ch, MAP_H);
+    // Inset box (in main viewBox units), matching the cluster's aspect ratio.
+    const arC = cw / ch;
+    let ih = h * 0.52, iw = ih * arC;
+    const maxIw = w * 0.48;
+    if (iw > maxIw) { iw = maxIw; ih = iw / arC; }
+    // Place the inset in whichever corner overlaps the fewest plotted points,
+    // so it covers empty ocean rather than routes or the far outlier.
+    const marg = Math.min(w, h) * 0.03;
+    const corners = [
+      [minX + marg, minY + marg],
+      [minX + w - iw - marg, minY + marg],
+      [minX + marg, minY + h - ih - marg],
+      [minX + w - iw - marg, minY + h - ih - marg],
+    ];
+    let ix = corners[0][0], iy = corners[0][1], bestC = Infinity;
+    for (const [x0, y0] of corners) {
+      const c = all.filter(p => p[0] >= x0 && p[0] <= x0 + iw && p[1] >= y0 && p[1] <= y0 + ih).length;
+      if (c < bestC) { bestC = c; ix = x0; iy = y0; }
     }
-    destSvg = `<polygon points="${star.join(' ')}" fill="#0a1a0e" stroke="#ffffff" `
-      + `stroke-width="1.2" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
-    // Name the destination above the star.
-    if (data.dest && data.dest.city) {
-      labelSvg += mkLabel(cx, cy - (s + FS * 0.85), data.dest.city, '#0a1a0e');
-    }
+    const insetOverlay = buildOverlay(dotMain / (iw / cw), FSMain / (iw / cw), 'all');
+    insetSvg =
+      `<rect x="${ix.toFixed(1)}" y="${iy.toFixed(1)}" width="${iw.toFixed(1)}" height="${ih.toFixed(1)}" `
+      + `fill="#ffffff" stroke="#9fb3c8" stroke-width="1.2" vector-effect="non-scaling-stroke" rx="3"/>`
+      + `<svg x="${ix.toFixed(1)}" y="${iy.toFixed(1)}" width="${iw.toFixed(1)}" height="${ih.toFixed(1)}" `
+      + `viewBox="${cxmin.toFixed(1)} ${cymin.toFixed(1)} ${cw.toFixed(1)} ${ch.toFixed(1)}" preserveAspectRatio="xMidYMid meet">`
+      + `<rect x="${cxmin.toFixed(1)}" y="${cymin.toFixed(1)}" width="${cw.toFixed(1)}" height="${ch.toFixed(1)}" fill="#eef3f6"/>`
+      + land + insetOverlay + `</svg>`;
   }
 
   const svg = `<svg viewBox="${minX.toFixed(1)} ${minY.toFixed(1)} ${w.toFixed(1)} ${h.toFixed(1)}" `
     + `xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Map of attendee routes">`
-    + land + segSvg + mk + destSvg + labelSvg + `</svg>`;
+    + land + mainOverlay + insetSvg + `</svg>`;
 
   const attendeeLegend = routesG.map(g =>
     `<span class="legend-item"><span class="legend-swatch" style="background:${g.color}"></span>${g.city}</span>`
@@ -1282,7 +1347,9 @@ async function renderRouteMap(data) {
   routeMap.innerHTML = svg
     + `<div class="route-map-legend">${attendeeLegend}${destLegend}</div>`
     + `<div class="route-map-legend route-map-modekey">${modeLegend}</div>`
-    + `<div class="route-map-note">Rail stations are approximated by their nearest city airport.</div>`;
+    + `<div class="route-map-note">Rail stations are approximated by their nearest city airport.`
+    + (hasInset ? ` The inset zooms in on the main cluster of attendees.` : ``)
+    + `</div>`;
 }
 
 // ── City search ──
