@@ -1278,21 +1278,24 @@ class TestMouseMoveClearsFocus:
         assert "focusedRowEl = null" in html
 
 
-# ─── 18. HTML: Price toolbar scrolls into view on route select ───────────────
+# ─── 18. HTML: Route detail scrolls to the map on route select ───────────────
 
-class TestPriceToolbarScroll:
+class TestRouteSelectScroll:
     """
     When a destination is selected and route details load, the page should
-    scroll so the 'Get Live Prices' toolbar is visible — it was easy to miss
-    at the bottom of a long route list.
+    scroll to the TOP of the route detail (the header, immediately above the
+    map) so the route map comes into view — not to the price toolbar at the
+    bottom of a long route list.
     """
 
-    def test_price_toolbar_scroll_called_after_routes_load(self, html):
-        assert "priceToolbar" in html
-        assert "priceToolbar').scrollIntoView" in html
+    def test_scrolls_to_route_header_after_routes_load(self, html):
+        # The route-select scroll targets the detail header (map is just below),
+        # not the price toolbar.
+        assert "routeHeader.scrollIntoView" in html
+        assert "priceToolbar').scrollIntoView" not in html
 
     def test_scroll_uses_smooth_behavior(self, html):
-        # Both scroll calls (toolbar + price results) should be smooth
+        # Scroll calls (route select + price results) should be smooth
         assert "behavior: 'smooth'" in html
 
     def test_price_results_cleared_on_new_route_select(self, html):

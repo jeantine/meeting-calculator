@@ -2218,8 +2218,8 @@ async function selectDest(iata, row) {
   document.getElementById('priceToolbar').style.display = 'flex';
   document.getElementById('priceResults').innerHTML = '';
 
-  // Scroll so the price toolbar (bottom of route detail) is visible
-  document.getElementById('priceToolbar').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  // Scroll to the top of the route detail so the map comes into view.
+  routeHeader.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 // ── Fetch indicative prices ──
