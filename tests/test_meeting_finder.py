@@ -81,6 +81,7 @@ from app import (
     haversine,
     serpapi_flight_price,
     serpapi_hotel_price,
+    waypoint_latlon,
 )
 
 
@@ -378,6 +379,23 @@ class TestFindDestinationsEndpoint:
             )
 
 
+class TestWaypointLatlon:
+    """waypoint_latlon() resolves coordinates for the route map."""
+
+    def test_air_iata_uses_exact_airport_coords(self):
+        lat, lon = waypoint_latlon("LHR")
+        # London Heathrow ~ 51.47 N, 0.46 W
+        assert 51 < lat < 52
+        assert -1 < lon < 0
+
+    def test_rail_station_approximated_by_city_airport(self):
+        # Rail stations have no coords; GBLON resolves via its London airports.
+        assert waypoint_latlon("GBLON") == waypoint_latlon("LHR")
+
+    def test_unknown_code_returns_none(self):
+        assert waypoint_latlon("ZZZZZ") is None
+
+
 # ─── 6. /api/get_routes ───────────────────────────────────────────────────────
 
 class TestGetRoutesEndpoint:
@@ -421,6 +439,43 @@ class TestGetRoutesEndpoint:
         for leg in legs:
             assert "airline_name" in leg, f"Missing airline_name on leg {leg}"
             assert leg["airline_name"]  # non-empty string
+
+    def test_legs_carry_coordinates_for_map(self, client):
+        """
+        Every leg must carry src_latlon / dst_latlon so the frontend can draw
+        the route map. The response also exposes dest_latlon for the
+        destination star marker.
+        """
+        payload = {
+            "attendees": [{"city": "Vienna", "iatas": ["VIE"], "count": 1}],
+            "dest_iata": "LHR",
+        }
+        data = client.post("/api/get_routes", json=payload).get_json()
+        assert data["dest_latlon"] and len(data["dest_latlon"]) == 2
+        legs = data["routes"][0]["legs"]
+        assert len(legs) > 0
+        for leg in legs:
+            for key in ("src_latlon", "dst_latlon"):
+                assert key in leg, f"Missing {key} on leg {leg}"
+                lat, lon = leg[key]
+                assert -90 <= lat <= 90 and -180 <= lon <= 180
+
+    def test_rail_leg_coordinates_approximated_by_city_airport(self, client):
+        """
+        Rail stations carry no coordinates, so they are approximated by the
+        city's airport. London→Paris by rail should resolve both endpoints.
+        """
+        payload = {
+            "attendees": [{"city": "London", "iatas": ["LHR"],
+                           "rail": "GBLON", "city_code": "GBLON", "count": 1}],
+            "dest_iata": "FRPAR",
+        }
+        data = client.post("/api/get_routes", json=payload).get_json()
+        legs = data["routes"][0]["legs"]
+        assert any(l["mode"] == "rail" for l in legs)
+        for leg in legs:
+            assert leg["src_latlon"] is not None
+            assert leg["dst_latlon"] is not None
 
     def test_home_city_attendee_flagged(self, client):
         payload = {
@@ -982,9 +1037,14 @@ class TestUIFeatures:
 
     def test_header_svg_is_material_plane(self, html):
         """Logo is the Material Design 'flight' plane icon (solid filled SVG path)."""
+        import re
         # The Material Design flight icon has this distinctive path sequence
         assert 'M21 16v-2l-8-5V3.5' in html   # top of the MD flight path
-        assert 'stroke-dasharray' not in html  # no dashed orbit ring in this version
+        # No dashed orbit ring on the logo itself. Scoped to the header-icon SVG
+        # because the route map legitimately uses stroke-dasharray for rail legs.
+        header_icon = re.search(r'<div class="header-icon">.*?</svg>', html, re.DOTALL)
+        assert header_icon, "header-icon SVG not found"
+        assert 'stroke-dasharray' not in header_icon.group()
 
 
 # ─── 12. HTML: Attendee chip ──────────────────────────────────────────────────

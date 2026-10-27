@@ -550,6 +550,39 @@ for _city_code, _cinfo in CITIES.items():
     if _cinfo['rail']:
         STATION_TO_IATAS[_cinfo['rail']].extend(_cinfo['airports'])
 
+# City-name → (lat, lon) lookup, first airport in each city wins. Used to
+# approximate rail-station coordinates by the station's city (per the chosen
+# "approximate by city airport" strategy) when no CITIES airport mapping exists.
+_AIRPORT_LATLON_BY_CITY = {}
+for _ap in AIRPORTS.values():
+    _key = _ap['city'].strip().lower()
+    if _key:
+        _AIRPORT_LATLON_BY_CITY.setdefault(_key, (_ap['lat'], _ap['lon']))
+
+
+def waypoint_latlon(code):
+    """Approximate (lat, lon) for a route waypoint code.
+
+    Air IATA codes use their exact airport coordinates. Rail station codes are
+    approximated by the city's primary airport (via STATION_TO_IATAS, falling
+    back to a city-name match), since rail stations carry no coordinates.
+    Returns None when no coordinate can be derived (e.g. a small rail-only town
+    with no nearby airport); callers should skip such waypoints.
+    """
+    ap = AIRPORTS.get(code)
+    if ap:
+        return [ap['lat'], ap['lon']]
+    for _iata in STATION_TO_IATAS.get(code, []):
+        ap = AIRPORTS.get(_iata)
+        if ap:
+            return [ap['lat'], ap['lon']]
+    station = RAIL_STATIONS.get(code)
+    if station:
+        coords = _AIRPORT_LATLON_BY_CITY.get(station.get('city', '').strip().lower())
+        if coords:
+            return [coords[0], coords[1]]
+    return None
+
 # High-speed and main-line rail connections (bidirectional, distances in km).
 # Covers the Interrail network across the UK and Europe.
 _RAIL_EDGES = [
@@ -2933,6 +2966,11 @@ def index():
 def world_map():
     return send_from_directory(_HERE, 'world-airports.svg', mimetype='image/svg+xml')
 
+@app.route('/world.geo.json')
+def world_geojson():
+    # Country outlines (Natural Earth 1:110m) for the route-map basemap.
+    return send_from_directory(_HERE, 'world.geo.json', mimetype='application/json')
+
 @app.route('/favicon.svg')
 def favicon():
     return send_from_directory(_HERE, 'favicon.svg', mimetype='image/svg+xml')
@@ -2997,8 +3035,19 @@ def get_routes():
         dest_info = dest_info or {}
 
     routes = get_routes_for_destination(attendees, dest_iata)
+
+    # Attach approximate coordinates to each leg so the frontend can draw a
+    # map of every attendee's route. Air legs use exact airport coordinates;
+    # rail legs are approximated by city airport (see waypoint_latlon()).
+    for r in routes:
+        for leg in r.get('legs', []):
+            leg['src_latlon'] = waypoint_latlon(leg['src'])
+            leg['dst_latlon'] = waypoint_latlon(leg['dst'])
+
     return jsonify({'dest': dest_info, 'dest_iata': dest_iata,
-                    'dest_is_rail': dest_is_rail, 'routes': routes})
+                    'dest_is_rail': dest_is_rail,
+                    'dest_latlon': waypoint_latlon(dest_iata),
+                    'routes': routes})
 
 @app.route('/api/get_live_prices', methods=['POST'])
 @limiter.limit("20/minute")

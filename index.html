@@ -530,7 +530,66 @@
     font-family: 'DM Mono', monospace;
   }
 
+  .route-detail-cols {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+  .route-map {
+    width: 100%;
+    border: 1px solid var(--border2);
+    border-top: none;
+    border-radius: 0;
+    background: var(--surface2);
+    padding: 0.9rem 1rem 1rem;
+    box-sizing: border-box;
+  }
+  .route-map:empty { display: none; }
+  .route-map > svg {
+    display: block;
+    width: 100%;
+    max-width: 640px;
+    margin: 0 auto;
+    height: auto;
+    background: #eef3f6;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+  }
+  .route-map-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 1rem;
+    margin-top: 0.7rem;
+    font-size: 0.78rem;
+    font-family: 'DM Mono', monospace;
+    color: var(--muted);
+  }
+  .route-map-legend .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .route-map-legend .legend-swatch {
+    width: 18px;
+    height: 3px;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+  .route-map-modekey {
+    margin-top: 0.35rem;
+    color: var(--text);
+  }
+  .route-map-modekey svg { flex-shrink: 0; }
+  .route-map-note {
+    margin-top: 0.5rem;
+    font-size: 0.72rem;
+    color: var(--muted);
+    font-family: 'DM Mono', monospace;
+  }
   .attendee-routes {
+    flex: 0 0 auto;
+    width: 100%;
+    min-width: 0;
     border: 1px solid var(--border2);
     border-top: none;
     border-radius: 0 0 14px 14px;
@@ -578,24 +637,36 @@
   .leg-row.leg-rail { background: var(--green-bg); }
   .leg-row {
     display: flex;
-    align-items: center;
-    gap: 0.8rem;
-    padding: 0.45rem 0;
-    font-size: 0.83rem;
+    flex-direction: column;
+    gap: 3px;
+    padding: 0.55rem 0;
     border-bottom: 1px dashed var(--border);
   }
   .leg-row:last-child { border-bottom: none; }
-  .leg-iatas {
-    font-family: 'DM Mono', monospace;
+  /* Primary line: human-readable origin → destination cities. */
+  .leg-main {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    font-size: 0.95rem;
     font-weight: 600;
-    font-size: 0.83rem;
-    white-space: nowrap;
     color: var(--text);
   }
+  .leg-mode { color: var(--muted); font-weight: 400; }
   .leg-arrow { color: var(--green); }
-  .leg-cities { flex: 1; color: var(--muted); font-size: 0.78rem; }
-  .leg-airline {
+  /* Secondary line: airport/station codes, airline, distance. */
+  .leg-meta {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem 0.7rem;
+    font-size: 0.72rem;
+    color: var(--muted);
     font-family: 'DM Mono', monospace;
+  }
+  .leg-codes { letter-spacing: 0.02em; }
+  .leg-airline {
     font-size: 0.7rem;
     background: var(--surface2);
     border: 1px solid var(--border);
@@ -603,13 +674,7 @@
     border-radius: 5px;
     color: var(--muted);
   }
-  .leg-dist {
-    font-family: 'DM Mono', monospace;
-    font-size: 0.75rem;
-    color: var(--muted);
-    text-align: right;
-    white-space: nowrap;
-  }
+  .leg-dist { white-space: nowrap; }
 
   /* ── Spinner ── */
   .spinner-wrap {
@@ -939,10 +1004,13 @@
       <!-- Route detail -->
       <div class="route-detail" id="routeDetail">
         <div class="route-dest-header" id="routeHeader"></div>
-        <div class="attendee-routes" id="routeBody">
-          <div class="spinner-wrap" id="routeSpinner">
-            <div class="spinner"></div>
-            <span>Loading routes…</span>
+        <div class="route-detail-cols">
+          <div class="route-map" id="routeMap"></div>
+          <div class="attendee-routes" id="routeBody">
+            <div class="spinner-wrap" id="routeSpinner">
+              <div class="spinner"></div>
+              <span>Loading routes…</span>
+            </div>
           </div>
         </div>
 
@@ -1016,8 +1084,191 @@ const greenestBody = document.getElementById('greenestBody');
 const homeBody     = document.getElementById('homeBody');
 const routeDetail = document.getElementById('routeDetail');
 const routeHeader = document.getElementById('routeHeader');
+const routeMap    = document.getElementById('routeMap');
 const routeBody   = document.getElementById('routeBody');
 const routeSpinner= document.getElementById('routeSpinner');
+
+// Distinct colours for each attendee's route line on the map.
+const ROUTE_MAP_COLORS = ['#2563eb','#dc2626','#7c3aed','#ea580c','#0891b2',
+                          '#c026d3','#65a30d','#db2777','#0d9488','#9333ea',
+                          '#b45309','#1d4ed8'];
+
+// World basemap: equirectangular projection (viewBox 0 0 1000 500 == 360°×180°).
+const MAP_W = 1000, MAP_H = 500;
+const projX = lon => (lon + 180) / 360 * MAP_W;
+const projY = lat => (90 - lat) / 180 * MAP_H;
+
+// Country outlines (Natural Earth 1:110m), projected once and cached as a single
+// SVG <path>. The land geometry is projection-only (independent of the viewBox
+// crop), so it's built one time and reused for every route map.
+let worldLandPath = null;
+let worldLandPromise = null;
+async function ensureWorldLand() {
+  if (worldLandPath !== null) return worldLandPath;
+  if (!worldLandPromise) {
+    worldLandPromise = fetch('/world.geo.json')
+      .then(r => r.json())
+      .then(geo => {
+        const ring = r => 'M' + r.map(c => projX(c[0]).toFixed(1) + ',' + projY(c[1]).toFixed(1)).join('L') + 'Z';
+        const parts = [];
+        for (const f of (geo.features || [])) {
+          const g = f.geometry; if (!g) continue;
+          const polys = g.type === 'Polygon' ? [g.coordinates]
+                      : g.type === 'MultiPolygon' ? g.coordinates : [];
+          for (const poly of polys) for (const r of poly) parts.push(ring(r));
+        }
+        worldLandPath = `<path d="${parts.join('')}" fill="#dfe5e0" `
+          + `stroke="rgba(0,0,0,0.13)" stroke-width="0.5" fill-rule="evenodd" `
+          + `vector-effect="non-scaling-stroke"/>`;
+        return worldLandPath;
+      })
+      .catch(() => { worldLandPath = ''; return ''; });   // map still draws over plain ocean
+  }
+  return worldLandPromise;
+}
+
+// Build a geographic map of every attendee's route over a real world basemap.
+// Each attendee gets a distinct colour; flights are drawn as solid curved arcs
+// and trains as dashed straight lines, so mode is distinguishable at a glance.
+// Connection points (intermediate airports/stations) are marked, with a hollow
+// ring at each origin and a star at the meeting destination.
+async function renderRouteMap(data) {
+  const land = await ensureWorldLand();
+
+  const travelRoutes = (data.routes || []).filter(r => !r.home && r.legs && r.legs.length);
+
+  // Per route: ordered projected vertices + per-leg segments tagged by mode.
+  const routesG = [];
+  travelRoutes.forEach((r, i) => {
+    const color = ROUTE_MAP_COLORS[i % ROUTE_MAP_COLORS.length];
+    const verts = [], segs = [];
+    r.legs.forEach(l => {
+      if (!l.src_latlon || !l.dst_latlon) return;
+      const a = [projX(l.src_latlon[1]), projY(l.src_latlon[0])];
+      const b = [projX(l.dst_latlon[1]), projY(l.dst_latlon[0])];
+      if (!verts.length) verts.push(a);
+      verts.push(b);
+      // Label each leg by its endpoint: rail uses the city name (station codes
+      // are opaque), air uses the compact IATA code.
+      const dst = l.mode === 'rail' ? (l.dst_city || l.dst) : l.dst;
+      segs.push({ mode: l.mode, a, b, dst });
+    });
+    if (segs.length) routesG.push({ color, city: r.city, verts, segs });
+  });
+
+  if (!routesG.length) { routeMap.innerHTML = ''; return; }
+
+  // Destination point (star marker).
+  const destLL = data.dest_latlon;
+  const destPt = destLL ? [projX(destLL[1]), projY(destLL[0])] : null;
+
+  // Bounding box over every plotted point, with padding, a sane aspect ratio,
+  // and a minimum span so short hops aren't over-zoomed.
+  const all = routesG.flatMap(g => g.verts).concat(destPt ? [destPt] : []);
+  let minX = Math.min(...all.map(p => p[0])), maxX = Math.max(...all.map(p => p[0]));
+  let minY = Math.min(...all.map(p => p[1])), maxY = Math.max(...all.map(p => p[1]));
+  let w = Math.max(maxX - minX, 25), h = Math.max(maxY - minY, 15);
+  const padX = w * 0.14 + 10, padY = h * 0.14 + 10;
+  minX -= padX; maxX += padX; minY -= padY; maxY += padY;
+  w = maxX - minX; h = maxY - minY;
+  // Clamp aspect ratio to [1.4, 2.6] (w:h), expanding the deficient side.
+  const ar = w / h, TARGET_MIN = 1.4, TARGET_MAX = 2.6;
+  if (ar < TARGET_MIN) { const nw = h * TARGET_MIN; minX -= (nw - w) / 2; w = nw; }
+  else if (ar > TARGET_MAX) { const nh = w / TARGET_MAX; minY -= (nh - h) / 2; h = nh; }
+  // Keep the viewBox inside the world bounds.
+  minX = Math.max(0, Math.min(minX, MAP_W - w));
+  minY = Math.max(0, Math.min(minY, MAP_H - h));
+  w = Math.min(w, MAP_W); h = Math.min(h, MAP_H);
+
+  const dot = Math.max(w, h) * 0.009;   // marker radius in viewBox units
+
+  // Route segments + per-leg labels: flights = solid curved arc, trains =
+  // dashed straight line. Each leg is labelled "→ <endpoint> <mode glyph>".
+  const esc = t => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const FS = Math.max(w * 0.032, 2.4);   // label size (∝ viewBox ⇒ ~constant on screen)
+  let segSvg = '', labelSvg = '';
+  routesG.forEach(g => {
+    g.segs.forEach(s => {
+      const [ax, ay] = s.a, [bx, by] = s.b;
+      const dx = bx - ax, dy = by - ay, len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len;   // unit perpendicular (bow side)
+      let lx, ly;
+      if (s.mode === 'rail') {
+        segSvg += `<line x1="${ax.toFixed(1)}" y1="${ay.toFixed(1)}" `
+          + `x2="${bx.toFixed(1)}" y2="${by.toFixed(1)}" stroke="${g.color}" `
+          + `stroke-width="2.4" stroke-dasharray="5 4" stroke-linecap="round" `
+          + `vector-effect="non-scaling-stroke"/>`;
+        lx = (ax + bx) / 2 + nx * FS * 0.9;
+        ly = (ay + by) / 2 + ny * FS * 0.9;
+      } else {
+        const mx = (ax + bx) / 2, my = (ay + by) / 2;
+        const off = Math.min(len * 0.16, 30);
+        const cx = mx + nx * off, cy = my + ny * off;   // perpendicular bow
+        segSvg += `<path d="M${ax.toFixed(1)},${ay.toFixed(1)} `
+          + `Q${cx.toFixed(1)},${cy.toFixed(1)} ${bx.toFixed(1)},${by.toFixed(1)}" `
+          + `fill="none" stroke="${g.color}" stroke-width="2.4" stroke-linecap="round" `
+          + `vector-effect="non-scaling-stroke"/>`;
+        // Apex of the quadratic, nudged just past the bow for clearance.
+        lx = 0.25 * ax + 0.5 * cx + 0.25 * bx + nx * FS * 0.5;
+        ly = 0.25 * ay + 0.5 * cy + 0.25 * by + ny * FS * 0.5;
+      }
+      const glyph = s.mode === 'rail' ? '🚆' : '✈';
+      labelSvg += `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" `
+        + `font-size="${FS.toFixed(2)}" text-anchor="middle" dominant-baseline="middle" `
+        + `fill="${g.color}" stroke="#ffffff" stroke-width="${(FS * 0.22).toFixed(2)}" `
+        + `style="paint-order:stroke;stroke-linejoin:round;font-family:'DM Mono',monospace;font-weight:600">`
+        + `→ ${esc(s.dst)} ${glyph}</text>`;
+    });
+  });
+
+  // Markers: hollow ring at origin, filled dot at each connection point.
+  let mk = '';
+  routesG.forEach(g => {
+    const o = g.verts[0];
+    mk += `<circle cx="${o[0].toFixed(1)}" cy="${o[1].toFixed(1)}" r="${dot}" `
+      + `fill="#ffffff" stroke="${g.color}" stroke-width="1.8" vector-effect="non-scaling-stroke"/>`;
+    for (let k = 1; k < g.verts.length - 1; k++) {
+      const p = g.verts[k];
+      mk += `<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="${(dot * 0.62).toFixed(2)}" `
+        + `fill="${g.color}" stroke="#ffffff" stroke-width="1" vector-effect="non-scaling-stroke"/>`;
+    }
+  });
+
+  // Destination star.
+  let destSvg = '';
+  if (destPt) {
+    const s = dot * 2, cx = destPt[0], cy = destPt[1], star = [];
+    for (let k = 0; k < 10; k++) {
+      const ang = -Math.PI / 2 + k * Math.PI / 5;
+      const rad = k % 2 === 0 ? s : s * 0.45;
+      star.push((cx + rad * Math.cos(ang)).toFixed(1) + ',' + (cy + rad * Math.sin(ang)).toFixed(1));
+    }
+    destSvg = `<polygon points="${star.join(' ')}" fill="#0a1a0e" stroke="#ffffff" `
+      + `stroke-width="1.2" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
+  }
+
+  const svg = `<svg viewBox="${minX.toFixed(1)} ${minY.toFixed(1)} ${w.toFixed(1)} ${h.toFixed(1)}" `
+    + `xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Map of attendee routes">`
+    + land + segSvg + mk + destSvg + labelSvg + `</svg>`;
+
+  const attendeeLegend = routesG.map(g =>
+    `<span class="legend-item"><span class="legend-swatch" style="background:${g.color}"></span>${g.city}</span>`
+  ).join('');
+  const destLegend = destPt
+    ? `<span class="legend-item"><span class="legend-swatch" style="background:#0a1a0e;height:11px;width:11px;border-radius:50%"></span>${data.dest.city} (destination)</span>`
+    : '';
+  // Mode key: solid line = flight, dashed line = train.
+  const modeLegend =
+    `<span class="legend-item"><svg width="22" height="8" viewBox="0 0 22 8">`
+    + `<line x1="1" y1="4" x2="21" y2="4" stroke="currentColor" stroke-width="2"/></svg>✈ Flight</span>`
+    + `<span class="legend-item"><svg width="22" height="8" viewBox="0 0 22 8">`
+    + `<line x1="1" y1="4" x2="21" y2="4" stroke="currentColor" stroke-width="2" stroke-dasharray="4 3"/></svg>${RAIL_ICON} Train</span>`;
+
+  routeMap.innerHTML = svg
+    + `<div class="route-map-legend">${attendeeLegend}${destLegend}</div>`
+    + `<div class="route-map-legend route-map-modekey">${modeLegend}</div>`
+    + `<div class="route-map-note">Rail stations are approximated by their nearest city airport.</div>`;
+}
 
 // ── City search ──
 let dropdownActiveIdx = -1;
@@ -1684,6 +1935,7 @@ async function selectDest(iata, row) {
 
   routeDetail.classList.add('visible');
   routeHeader.innerHTML = '';
+  routeMap.innerHTML    = '';
   routeBody.innerHTML   = '';
   routeBody.appendChild(routeSpinner);
   routeSpinner.classList.add('visible');
@@ -1747,14 +1999,19 @@ async function selectDest(iata, row) {
     const legs = r.legs.map(l => {
       const isRail = l.mode === 'rail';
       const modeIcon = isRail ? RAIL_ICON : '✈';
-      const srcLabel = isRail ? l.src_city : l.src;
-      const dstLabel = isRail ? l.dst_city : l.dst;
+      // Primary line = city names (what the reader cares about); secondary line
+      // = the airport/station codes (air: IATA; rail: full station names).
+      const srcCity = l.src_city || l.src;
+      const dstCity = l.dst_city || l.dst;
+      const codes   = isRail ? `${l.src_name} → ${l.dst_name}` : `${l.src} → ${l.dst}`;
       return `
       <div class="leg-row${isRail ? ' leg-rail' : ''}">
-        <span class="leg-iatas">${modeIcon} ${srcLabel} <span class="leg-arrow">→</span> ${dstLabel}</span>
-        <span class="leg-cities">${isRail ? (l.src_name + ' → ' + l.dst_name) : (l.src_city + ' → ' + l.dst_city)}</span>
-        <span class="leg-airline" title="${l.airline_name || l.airline}">${l.airline}</span>
-        <span class="leg-dist">${l.dist_km.toLocaleString()} km</span>
+        <div class="leg-main"><span class="leg-mode">${modeIcon}</span> ${srcCity} <span class="leg-arrow">→</span> ${dstCity}</div>
+        <div class="leg-meta">
+          <span class="leg-codes">${codes}</span>
+          <span class="leg-airline" title="${l.airline_name || l.airline}">${l.airline}</span>
+          <span class="leg-dist">${l.dist_km.toLocaleString()} km</span>
+        </div>
       </div>`;
     }).join('');
 
@@ -1779,6 +2036,9 @@ async function selectDest(iata, row) {
         <div class="legs-list">${legs}</div>
       </div>`;
   }).join('');
+
+  // Draw the route map above the per-attendee list.
+  renderRouteMap(data);
 
   // ── Hotel estimate in route detail ──────────────────────────────────────
   // Look up hotel data from the ranking results (already computed upfront).

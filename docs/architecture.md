@@ -144,3 +144,26 @@ Bangkok→London flew BKK nonstop. Grouping makes both pick BKK.
 > Caveat: grouping keys on the airports CSV's `city` string, so distinct metro
 > airports filed under different city names stay separate (e.g. Newark/EWR is
 > not grouped with New York's JFK + LGA).
+
+## 4 · Route map (drilldown)
+
+When a destination is selected, the route detail renders an SVG map of every
+attendee's journey over a real world basemap.
+
+- **Coordinates** — `/api/get_routes` enriches each leg with `src_latlon` /
+  `dst_latlon` and adds a top-level `dest_latlon`, all via `waypoint_latlon()`.
+  Air codes use exact `AIRPORTS` coordinates; **rail station codes have no
+  coordinates, so they are approximated by the city's airport** (via
+  `STATION_TO_IATAS`, falling back to a city-name match in
+  `_AIRPORT_LATLON_BY_CITY`). Unresolvable waypoints return `None` and are
+  skipped by the frontend.
+- **Basemap** — country outlines from `world.geo.json` (Natural Earth 1:110m,
+  served at `/world.geo.json`). The frontend (`ensureWorldLand()`) projects them
+  **once** with a fixed equirectangular projection into a 1000×500 space and
+  caches the resulting `<path>`; the viewBox is then cropped to the bounding box
+  of the routes.
+- **Drawing** (`renderRouteMap()`) — each attendee gets a distinct colour;
+  **flights are solid curved arcs, trains are dashed straight lines**, with a
+  hollow ring at each origin, filled dots at connection points, and a star at the
+  destination. The projection is shared with `world-airports.svg` (the page
+  background), which uses the same 1000×500 equirectangular layout.
